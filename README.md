@@ -1,42 +1,48 @@
-# ⚽ FPL Machine Learning: From Theory to Practice
+# ⚽ Premier League Match Predictor
 
-This repository documents the application of fundamental **Machine Learning** concepts to real-world football data, specifically for the **Fantasy Premier League (FPL)**.
+This repository explores the application of **Machine Learning (Classification)** to predict the outcome of Premier League football matches.
 
-The main goal is to bridge the gap between classroom theory (implementing algorithms "from scratch" using `numpy`) and a production environment using professional libraries (`scikit-learn`).
+The goal is to apply theoretical concepts of Linear Classification and Softmax Regression (learned in class with `numpy`) to a real-world scenario using production-grade tools like `scikit-learn`.
 
-## 📋 What this project contains
+## 📋 Project Overview
 
-This project focuses on two main types of ML problems applied to football:
+This project solves a **Multi-Class Classification Problem**: predicting the Full Time Result (FTR) of a match.
 
-### 1. Linear Regression (Points Prediction)
-* **Objective:** Predict the exact number of points a player will score in a gameweek.
-* **Applied Theory:** *Linear Regression* with *Mean Squared Error (MSE)*.
-* **Input:** Player stats (Creativity, Threat, Influence), Cost, Minutes played.
-* **Output:** Continuous value (e.g., `6.5` points).
+### The Challenge
+Given historical match data and betting odds, can we predict the outcome?
+* **Input ($X$):** Home Team, Away Team, Pre-match Odds (Bet365)...
+* **Output ($y$):** One of three classes:
+    * `0`: Away Win
+    * `1`: Draw
+    * `2`: Home Win
 
-### 2. Linear Classification (Match Results Prediction)
-* **Objective:** Predict the outcome of a match (Home Win, Draw, Away Win).
-* **Applied Theory:** *Linear Classification* using *Softmax* and *Cross-Entropy Loss*.
-* **Output:** Probabilities for each class (e.g., `[0.60, 0.25, 0.15]`).
+### Methodology
+1.  **Data Collection:** Automated download of historical Premier League data (last 5 seasons) from *Football-Data.co.uk*.
+2.  **Preprocessing:** Converting categorical data (Team Names, Results) into numerical formats suitable for ML models.
+3.  **Modeling:** Training a **Random Forest Classifier** to learn patterns from past matches.
+4.  **Evaluation:** Measuring performance using **Accuracy** and **Confusion Matrices**.
 
 ## 🛠️ Tech Stack
 
 * **Language:** Python 3
 * **Environment:** VS Code + Jupyter Notebooks (`.ipynb`)
 * **Libraries:**
-    * `pandas` & `numpy`: Data manipulation.
+    * `pandas` & `numpy`: Data manipulation and cleaning.
     * `matplotlib` & `seaborn`: Data visualization.
-    * `scikit-learn`: Optimized implementation of ML models.
+    * `scikit-learn`: Machine Learning models and evaluation metrics.
 
 ## 📚 Data Source
 
-Historical data is sourced from the community-maintained public repository:
-* [Vaastav/Fantasy-Premier-League](https://github.com/vaastav/Fantasy-Premier-League)
+Historical match results and betting odds are sourced from the reputable data archive:
+* [Football-Data.co.uk](https://www.football-data.co.uk/englandm.php)
 
 ---
 
 ### 🚀 How to Run
 
-1.  Install dependencies: `pip install pandas numpy matplotlib seaborn scikit-learn jupyter`
-2.  Open VS Code.
-3.  Run the `FPL_Project_Start.ipynb` file.
+1.  **Install dependencies:**
+    ```bash
+    pip install pandas numpy matplotlib seaborn scikit-learn jupyter
+    ```
+2.  **Open the Project:** Launch VS Code in the repository folder.
+3.  **Run the Notebook:** Open and execute `Match_Predictor.ipynb`. The code will automatically download the necessary data and train the model.
