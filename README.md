@@ -1,48 +1,53 @@
 # ⚽ Premier League Match Predictor
 
-This repository explores the application of **Machine Learning (Classification)** to predict the outcome of Premier League football matches.
+This repository contains an advanced **Machine Learning** system designed to predict the outcomes of English Premier League matches.
 
-The goal is to apply theoretical concepts of Linear Classification and Softmax Regression (learned in class with `numpy`) to a real-world scenario using production-grade tools like `scikit-learn`.
+This project has evolved to **Version 4.5**, shifting from simple models to **XGBoost**, integrating advanced metrics like **Expected Goals (xG)**, and implementing a specific optimization strategy to better predict draws.
 
 ## 📋 Project Overview
 
-This project solves a **Multi-Class Classification Problem**: predicting the Full Time Result (FTR) of a match.
+The goal is to solve a **Multi-Class Classification Problem** (Home Win, Draw, Away Win) by leveraging historical match data, advanced statistics, and betting odds to find value in predictions.
 
-### The Challenge
-Given historical match data and betting odds, can we predict the outcome?
-* **Input ($X$):** Home Team, Away Team, Pre-match Odds (Bet365)...
-* **Output ($y$):** One of three classes:
-    * `0`: Away Win
-    * `1`: Draw
-    * `2`: Home Win
+### Key Features
+Unlike basic statistical models, this project includes:
+1.  **Automated Web Scraping:** Real-time collection of *xG* data (from Understat) and match results (from Football-Data).
+2.  **Dynamic Elo System:** Implementation of a custom Elo rating algorithm that updates match-by-match.
+3.  **Optimized XGBoost:** Utilizes *Gradient Boosting* with specific sample weights to handle class imbalance (giving more importance to Draws).
+4.  **Leakage Prevention:** Ensures the model does not "see" the future during training by using time-lagged rolling averages for all statistics.
 
-### Methodology
-1.  **Data Collection:** Automated download of historical Premier League data (last 5 seasons) from *Football-Data.co.uk*.
-2.  **Preprocessing:** Converting categorical data (Team Names, Results) into numerical formats suitable for ML models.
-3.  **Modeling:** Training a **Random Forest Classifier** to learn patterns from past matches.
-4.  **Evaluation:** Measuring performance using **Accuracy** and **Confusion Matrices**.
+## 🧠 Methodology (Pipeline)
+
+The `football_predicter.ipynb` notebook handles the entire end-to-end process:
+
+1.  **Data Acquisition:**
+    * Scrapes data from the 2005 season up to 2025.
+    * Merges classic stats (Goals, Corners, Shots) with *Expected Goals* (xG) data.
+    * Cleans and normalizes team names across different data sources.
+
+2.  **Feature Engineering:**
+    * Calculation of **Elo Ratings** (Home and Away).
+    * Rolling Stats (last 5 games) for: Points, Goals (scored/conceded), Shots on Target, and xG.
+    * Conversion of Bet365 Odds into implied probabilities.
+
+3.  **Modeling & Training:**
+    * **Algorithm:** XGBoost Classifier (`objective='multi:softprob'`).
+    * **Tuning:** Uses `GridSearchCV` with `TimeSeriesSplit` to find the best hyperparameters without violating the temporal order of games.
+    * **Class Weighting:** Applies a weight of `1.3` to draw results to force the model to learn these harder-to-predict patterns.
 
 ## 🛠️ Tech Stack
 
-* **Language:** Python 3
-* **Environment:** VS Code + Jupyter Notebooks (`.ipynb`)
-* **Libraries:**
-    * `pandas` & `numpy`: Data manipulation and cleaning.
-    * `matplotlib` & `seaborn`: Data visualization.
-    * `scikit-learn`: Machine Learning models and evaluation metrics.
+* **Python 3.10+**
+* **Jupyter Notebook:** Development environment.
+* **XGBoost:** The core Machine Learning engine.
+* **Pandas & NumPy:** Data manipulation and cleaning.
+* **Scikit-Learn:** Evaluation metrics, *Grid Search*, and preprocessing.
+* **BeautifulSoup (bs4) & Requests:** Web scraping.
+* **Matplotlib & Seaborn:** Visualization of performance and confusion matrices.
 
-## 📚 Data Source
+## 🚀 How to Run
 
-Historical match results and betting odds are sourced from the reputable data archive:
-* [Football-Data.co.uk](https://www.football-data.co.uk/englandm.php)
+### 1. Install Dependencies
+Ensure you have the required libraries installed. You can install them via pip:
 
----
-
-### 🚀 How to Run
-
-1.  **Install dependencies:**
-    ```bash
-    pip install pandas numpy matplotlib seaborn scikit-learn jupyter
-    ```
-2.  **Open the Project:** Launch VS Code in the repository folder.
-3.  **Run the Notebook:** Open and execute `Match_Predictor.ipynb`. The code will automatically download the necessary data and train the model.
+```bash
+pip install pandas numpy xgboost scikit-learn matplotlib seaborn beautifulsoup4 requests joblib
