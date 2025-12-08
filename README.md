@@ -1,53 +1,69 @@
-# ⚽ Premier League Match Predictor
+# ⚽ Premier League Match Predictor (v4.5)
 
-This repository contains an advanced **Machine Learning** system designed to predict the outcomes of English Premier League matches.
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+![XGBoost](https://img.shields.io/badge/Model-XGBoost-orange)
+![Status](https://img.shields.io/badge/Status-Active-success)
 
-This project has evolved to **Version 4.5**, shifting from simple models to **XGBoost**, integrating advanced metrics like **Expected Goals (xG)**, and implementing a specific optimization strategy to better predict draws.
+An advanced Machine Learning system designed to predict **English Premier League** match outcomes. This project moves beyond basic statistics by integrating **Expected Goals (xG)**, a dynamic **Elo Rating System**, and a specialized **XGBoost** model optimized to detect value bets and draws.
+
+---
 
 ## 📋 Project Overview
 
-The goal is to solve a **Multi-Class Classification Problem** (Home Win, Draw, Away Win) by leveraging historical match data, advanced statistics, and betting odds to find value in predictions.
+The goal is to solve the classic football prediction problem (Home Win, Draw, Away Win) by combining historical data with modern advanced metrics.
 
-### Key Features
-Unlike basic statistical models, this project includes:
-1.  **Automated Web Scraping:** Real-time collection of *xG* data (from Understat) and match results (from Football-Data).
-2.  **Dynamic Elo System:** Implementation of a custom Elo rating algorithm that updates match-by-match.
-3.  **Optimized XGBoost:** Utilizes *Gradient Boosting* with specific sample weights to handle class imbalance (giving more importance to Draws).
-4.  **Leakage Prevention:** Ensures the model does not "see" the future during training by using time-lagged rolling averages for all statistics.
+**Current Version (v4.5)** focuses on:
+* **Draw Prediction:** Specific sample weighting to solve the "draw blindness" common in ML models.
+* **xG Integration:** Scraping and merging *Expected Goals* data to assess team performance better than just goals scored.
+* **Value Betting:** Comparing model probabilities against Bookmaker Odds to find positive Expected Value (EV).
 
-## 🧠 Methodology (Pipeline)
+---
 
-The `football_predicter.ipynb` notebook handles the entire end-to-end process:
+## 🧠 Key Features
 
-1.  **Data Acquisition:**
-    * Scrapes data from the 2005 season up to 2025.
-    * Merges classic stats (Goals, Corners, Shots) with *Expected Goals* (xG) data.
-    * Cleans and normalizes team names across different data sources.
+| Feature | Description |
+| :--- | :--- |
+| **🕷️ Automated Scraping** | Fetches live xG data from **Understat** and match results from **Football-Data.co.uk**. |
+| **📈 Dynamic Elo** | Calculates custom Elo Ratings updated match-by-match to track team strength momentum. |
+| **🤖 XGBoost Engine** | Uses Gradient Boosting with `GridSearchCV` to find the perfect mathematical balance. |
+| **🛡️ Time-Series Split** | Validates the model chronologically to prevent "future leakage" (cheating). |
+| **💰 Value Detector** | Compares AI probabilities vs. Implied Odds to recommend "Value Bets". |
 
-2.  **Feature Engineering:**
-    * Calculation of **Elo Ratings** (Home and Away).
-    * Rolling Stats (last 5 games) for: Points, Goals (scored/conceded), Shots on Target, and xG.
-    * Conversion of Bet365 Odds into implied probabilities.
+---
 
-3.  **Modeling & Training:**
-    * **Algorithm:** XGBoost Classifier (`objective='multi:softprob'`).
-    * **Tuning:** Uses `GridSearchCV` with `TimeSeriesSplit` to find the best hyperparameters without violating the temporal order of games.
-    * **Class Weighting:** Applies a weight of `1.3` to draw results to force the model to learn these harder-to-predict patterns.
+## 🛠️ Installation & Setup
 
-## 🛠️ Tech Stack
+1.  **Clone the repository:**
+    ```bash
+    git clone [https://github.com/barrosw5/football_match_predicter.git](https://github.com/barrosw5/football_match_predicter.git)
+    cd football_match_predicter
+    ```
 
-* **Python 3.10+**
-* **Jupyter Notebook:** Development environment.
-* **XGBoost:** The core Machine Learning engine.
-* **Pandas & NumPy:** Data manipulation and cleaning.
-* **Scikit-Learn:** Evaluation metrics, *Grid Search*, and preprocessing.
-* **BeautifulSoup (bs4) & Requests:** Web scraping.
-* **Matplotlib & Seaborn:** Visualization of performance and confusion matrices.
+2.  **Install dependencies:**
+    ```bash
+    pip install pandas numpy xgboost scikit-learn matplotlib seaborn beautifulsoup4 requests joblib
+    ```
 
-## 🚀 How to Run
+3.  **Run the Notebook:**
+    Open `football_predicter.ipynb` in Jupyter Notebook or VS Code and run all cells to train the model.
 
-### 1. Install Dependencies
-Ensure you have the required libraries installed. You can install them via pip:
+---
 
-```bash
-pip install pandas numpy xgboost scikit-learn matplotlib seaborn beautifulsoup4 requests joblib
+## 🚀 How to Use
+
+Once the model is trained (by running the notebook), use the `predict_match_advanced` function at the bottom of the notebook to get predictions for upcoming games.
+
+### Example Usage:
+```python
+# Predict a match by providing the date, teams, and bookmaker odds
+predict_match_advanced(
+    date_str='2025-12-08', 
+    home_team='Wolves', 
+    away_team='Man United', 
+    odd_h=4.45,  # Home Odd
+    odd_d=3.93,  # Draw Odd
+    odd_a=1.67,  # Away Odd
+    odd_1x=2.02, # Double Chance 1X
+    odd_12=1.22, # Double Chance 12
+    odd_x2=1.18  # Double Chance X2
+)
