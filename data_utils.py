@@ -6,8 +6,8 @@ import os
 import codecs
 import json
 import kagglehub
-import time  # <--- IMPORTANTE: Para fazer pausas
-import random # <--- IMPORTANTE: Para variar o tempo de pausa
+import time
+import random
 
 # --- CONFIGURAÇÃO DE CONSTANTES ---
 DATA_FILE = 'europe_football_full.csv'
@@ -16,6 +16,26 @@ MARKET_VALUE_FILE = 'market_values.csv'
 
 def clean_team_name(name):
     name_map = {
+        # --- PORTUGAL (NOVO!) ---
+        'Sp Braga': 'Braga', 'SC Braga': 'Braga',
+        'Sp Lisbon': 'Sporting CP', 'Sporting Lisbon': 'Sporting CP', 'Sporting': 'Sporting CP',
+        'Benfica': 'Benfica', 'SL Benfica': 'Benfica',
+        'FC Porto': 'Porto', 'Porto': 'Porto',
+        'Vitoria Guimaraes': 'Vitoria SC', 'Vitoria de Guimaraes': 'Vitoria SC',
+        'Rio Ave': 'Rio Ave', 'Rio Ave FC': 'Rio Ave',
+        'Estoril': 'Estoril', 'GD Estoril Praia': 'Estoril',
+        'Arouca': 'Arouca', 'FC Arouca': 'Arouca',
+        'Famalicao': 'Famalicao', 'FC Famalicão': 'Famalicao',
+        'Boavista': 'Boavista', 'Boavista FC': 'Boavista',
+        'Gil Vicente': 'Gil Vicente', 'Gil Vicente FC': 'Gil Vicente',
+        'Estrela': 'Estrela Amadora', 'Estrela Amadora': 'Estrela Amadora',
+        'Casa Pia': 'Casa Pia', 'Casa Pia AC': 'Casa Pia',
+        'Moreirense': 'Moreirense', 'Moreirense FC': 'Moreirense',
+        'Farense': 'Farense', 'SC Farense': 'Farense',
+        'Nacional': 'Nacional', 'CD Nacional': 'Nacional',
+        'Santa Clara': 'Santa Clara', 'CD Santa Clara': 'Santa Clara',
+        'AVS': 'AVS', 'AVS FS': 'AVS',
+
         # --- INGLATERRA ---
         'Manchester United': 'Man United', 'Manchester City': 'Man City',
         'Newcastle United': 'Newcastle', 'West Ham United': 'West Ham', 
@@ -73,7 +93,6 @@ def clean_team_name(name):
         'Monza': 'Monza', 'Genoa': 'Genoa', 'Salernitana': 'Salernitana',
 
         # --- OUTROS (CHAMPIONS LEAGUE) ---
-        'Benfica': 'Benfica', 'Sporting CP': 'Sporting CP', 'Porto': 'Porto',
         'Ajax': 'Ajax', 'PSV Eindhoven': 'PSV Eindhoven', 'Feyenoord': 'Feyenoord',
         'Club Brugge': 'Club Brugge', 'Shakhtar Donetsk': 'Shakhtar Donetsk',
         'Galatasaray': 'Galatasaray', 'Celtic': 'Celtic', 'Rangers': 'Rangers',
@@ -89,32 +108,20 @@ def scrape_understat_season(year, league_name):
     print(f"🕷️ A recolher xG ({league_name}) de {year}/{year+1}...")
     url = f"https://understat.com/league/{league_name}/{year}"
     
-    # --- CORREÇÃO 1: Headers Completos (Disfarce de Browser) ---
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
         'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-        'Cache-Control': 'max-age=0',
     }
     
-    # --- CORREÇÃO 2: Delay Aleatório (Para evitar bloqueios) ---
     time.sleep(random.uniform(2, 4)) 
 
     try:
         response = requests.get(url, headers=headers, timeout=15)
+        if response.status_code != 200: return pd.DataFrame()
         
-        if response.status_code != 200: 
-            print(f"   ❌ Erro HTTP {response.status_code} (Bloqueado?)")
-            return pd.DataFrame()
-        
-        # Tentar encontrar o JSON
         match = re.search(r"datesData\s*=\s*JSON\.parse\('(.*?)'\)", response.text)
-        if not match: 
-            # Debug: Mostrar o início do texto recebido para entender o erro
-            print(f"   ⚠️ HTML recebido, mas sem dados JSON. (Title: {response.text[:100]}...)")
-            return pd.DataFrame()
+        if not match: return pd.DataFrame()
             
         json_data = codecs.decode(match.group(1), 'unicode_escape')
         data = json.loads(json_data)
@@ -133,28 +140,30 @@ def scrape_understat_season(year, league_name):
                     'League': league_name
                 })
         return pd.DataFrame(matches)
-        
-    except Exception as e:
-        print(f"⚠️ Erro Técnico no ano {year} ({league_name}): {e}")
+    except Exception:
         return pd.DataFrame()
 
 def get_main_data(start, end):
+    # 1. Tentar carregar localmente
     if os.path.exists(DATA_FILE):
         print(f"📂 Carregando dados locais: {DATA_FILE}")
         df = pd.read_csv(DATA_FILE)
         df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
         return df
     
+    # 2. Se não existir, baixar e salvar
     print("🌐 A descarregar dados das Ligas (Football-Data)...")
     dfs = []
     base_url = "https://www.football-data.co.uk/mmz4281/{}/{}.csv"
-    divisions = ['E0', 'D1', 'SP1', 'F1', 'I1'] 
+    
+    # ADICIONEI 'P1' (LIGA PORTUGAL) AQUI
+    divisions = ['E0', 'D1', 'SP1', 'F1', 'I1', 'P1'] 
     
     for year in range(start, end + 1):
         season = f"{str(year)[-2:]}{str(year+1)[-2:]}"
         for div in divisions:
             try:
-                time.sleep(0.5) # Pequena pausa para ser educado
+                time.sleep(0.5)
                 url = base_url.format(season, div)
                 df = pd.read_csv(url)
                 df['Div'] = div
@@ -163,20 +172,24 @@ def get_main_data(start, end):
             except: pass
         
     full_df = pd.concat(dfs, ignore_index=True).dropna(subset=['Date', 'FTR'])
+    
+    # Limpeza de Nomes Imediata para garantir consistência
+    full_df['HomeTeam'] = full_df['HomeTeam'].apply(clean_team_name)
+    full_df['AwayTeam'] = full_df['AwayTeam'].apply(clean_team_name)
+
     full_df.to_csv(DATA_FILE, index=False)
-    print(f"✅ Dados das Ligas guardados em: {DATA_FILE}")
+    print(f"✅ Dados das Ligas (incluindo Portugal) guardados em: {DATA_FILE}")
     
     return full_df.sort_values('Date').reset_index(drop=True)
 
 def prepare_market_values():
     if os.path.exists(MARKET_VALUE_FILE):
-        print("✅ Dados de Valor de Mercado já existem localmente.")
+        print(f"📂 Carregando dados locais: {MARKET_VALUE_FILE}")
         return
 
     print("⬇️ A baixar dados do Transfermarkt via Kagglehub...")
     try:
         path = kagglehub.dataset_download("davidcariboo/player-scores")
-        print(f"📂 Dataset baixado em: {path}")
         
         valuations = pd.read_csv(os.path.join(path, "player_valuations.csv"))
         clubs = pd.read_csv(os.path.join(path, "clubs.csv"))
@@ -189,12 +202,13 @@ def prepare_market_values():
         squad_values.rename(columns={'name': 'Team', 'market_value_in_eur': 'Value'}, inplace=True)
         squad_values['Value'] = squad_values['Value'] / 1_000_000
         
+        squad_values['Team'] = squad_values['Team'].apply(clean_team_name)
+        
         squad_values.to_csv(MARKET_VALUE_FILE, index=False)
-        print(f"✅ 'market_values.csv' criado com sucesso! ({len(squad_values)} registos)")
+        print(f"✅ 'market_values.csv' criado com sucesso!")
         
     except Exception as e:
         print(f"⚠️ Erro ao processar dados do Kaggle: {e}")
-        print("   -> O sistema usará o método de estimativa (Tier System) como fallback.")
 
 def get_understat_data(start_year, end_year):
     if os.path.exists(XG_FILE):
@@ -203,11 +217,11 @@ def get_understat_data(start_year, end_year):
         df['Date'] = pd.to_datetime(df['Date']) 
         return df
 
-    print("🌐 A iniciar scraping Understat (Ligas + Champions)...")
-    print("⏳ Isto vai demorar alguns minutos para evitar bloqueios (Pausas de 2-4s)...")
+    print("🌐 A iniciar scraping Understat...")
     dfs = []
     
     for y in range(start_year, end_year + 1):
+        # NOTA: Understat não tem Portugal, por isso não adicionamos aqui
         dfs.append(scrape_understat_season(y, 'EPL'))
         dfs.append(scrape_understat_season(y, 'Bundesliga'))
         dfs.append(scrape_understat_season(y, 'La_liga'))
@@ -215,20 +229,14 @@ def get_understat_data(start_year, end_year):
         dfs.append(scrape_understat_season(y, 'Serie_A'))
         dfs.append(scrape_understat_season(y, 'Champions_League'))
     
-    # Concatenação segura
     valid_dfs = [d for d in dfs if not d.empty]
     
     if valid_dfs:
         df_final = pd.concat(valid_dfs, ignore_index=True)
         df_final['HomeTeam'] = df_final['HomeTeam'].apply(clean_team_name)
         df_final['AwayTeam'] = df_final['AwayTeam'].apply(clean_team_name)
-        
-        # GRAVAR LOCALMENTE
         df_final.to_csv(XG_FILE, index=False)
-        print(f"✅ SUCESSO! Dados Understat guardados em '{XG_FILE}' ({len(df_final)} jogos).")
+        print(f"✅ Dados Understat guardados.")
         return df_final
     else:
-        print("\n⚠️ AVISO CRÍTICO: Nenhum dado foi recolhido.")
-        print("   -> Causa provável: O seu IP está temporariamente bloqueado pelo Understat devido aos pedidos anteriores.")
-        print("   -> Solução: Espere 1 hora e tente novamente, ou ligue uma VPN.")
         return pd.DataFrame()
