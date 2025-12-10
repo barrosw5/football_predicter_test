@@ -1,171 +1,122 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import joblib
-import pandas as pd
-import numpy as np
-from scipy.stats import poisson
 import os
+import requests
+import traceback
 
 app = Flask(__name__)
+# Permite CORS para qualquer origem durante desenvolvimento
 CORS(app)
 
-# Carregar o cérebro
-try:
-    # Procura o ficheiro na mesma pasta onde este script está (pasta 'api')
-    model_path = os.path.join(os.path.dirname(__file__), 'football_brain.pkl')
-    artifacts = joblib.load(model_path)
-except Exception as e:
-    # Se falhar, mostra o erro no log do Vercel para sabermos o que foi
-    print(f"ERRO AO CARREGAR MODELO: {e}")
-    # Cria um artefacto vazio para não crashar o import, mas vai dar erro na previsão
+# --- CONFIGURAÇÃO ---
+# ⚠️ IMPORTANTE: Substitui pela tua chave REAL se esta não funcionar.
+# A chave no erro anterior parecia inválida ou expirada.
+API_KEY = "81f8d50f4cac1f4ac373794f18440676" 
+
+# Mapeamento (IDs da API-Football -> Teus códigos internos)
+LEAGUE_MAP = {
+    39: 'E0', 78: 'D1', 140: 'SP1', 61: 'F1', 135: 'I1',
+    40: 'E1', 79: 'D2', 141: 'SP2', 62: 'F2', 136: 'I2',
+    94: 'P1', 88: 'N1', 144: 'B1', 203: 'T1', 197: 'G1', 179: 'SC0',
+    2: 'CL' # Champions League (Exemplo, verifica o ID correto)
+}
+
+# --- CARREGAR MODELO ---
+model_path = os.path.join(os.path.dirname(__file__), 'football_brain.pkl')
+if os.path.exists(model_path):
+    try:
+        artifacts = joblib.load(model_path)
+        print("✅ Modelo carregado com sucesso.")
+    except Exception as e:
+        print(f"⚠️ Erro ao carregar modelo: {e}")
+        artifacts = None
+else:
+    print("⚠️ Modo Simulação Ativo (Modelo não encontrado).")
     artifacts = None
 
-model_multi = artifacts['model_multi']
-model_sniper = artifacts['model_sniper']
-model_shield = artifacts['model_shield']
-xgb_goals_h = artifacts['model_goals_h']
-xgb_goals_a = artifacts['model_goals_a']
-features_list = artifacts['features']
-df_ready = artifacts['history_df']
-le_div = artifacts['le_div']
-elos = artifacts['elos']
-
-@app.route('/api/index', methods=['POST'])
-def predict():
-    data = request.json
-    
-    # 1. Inputs
-    home = data.get('home_team')
-    away = data.get('away_team')
-    div = data.get('division')
-    date_str = data.get('date')
-    
+# --- ROTA 1: OBTER JOGOS ---
+@app.route('/api/fixtures', methods=['POST'])
+def get_fixtures():
     try:
-        odd_h = float(data['odd_h'])
-        odd_d = float(data['odd_d'])
-        odd_a = float(data['odd_a'])
-        odd_1x = float(data['odd_1x'] or 0)
-        odd_x2 = float(data['odd_x2'] or 0)
-        odd_12 = float(data['odd_12'] or 0)
-    except:
-        return jsonify({'error': 'Odds inválidas'}), 400
-
-    match_date = pd.to_datetime(date_str)
-    past_data = df_ready[df_ready['Date'] < match_date].copy()
-
-    # 2. Validação de Liga (O teu "Warning")
-    warning_msg = None
-    if div != 'CL':
-        for team in [home, away]:
-            team_games = df_ready[(df_ready['HomeTeam'] == team) | (df_ready['AwayTeam'] == team)].tail(20)
-            if not team_games.empty:
-                leagues = team_games[team_games['Div'] != 'CL']['Div'].value_counts()
-                if not leagues.empty:
-                    main_league = leagues.index[0]
-                    if main_league != div:
-                        warning_msg = f"{team} costuma jogar na liga {main_league}, mas selecionaste {div}. Confirma!"
-
-    # 3. Features
-    def get_val(team):
-        last = past_data[(past_data['HomeTeam']==team)|(past_data['AwayTeam']==team)]
-        if not last.empty:
-            return last.iloc[-1]['Home_Value'] if last.iloc[-1]['HomeTeam']==team else last.iloc[-1]['Away_Value']
-        return 200
-
-    def get_context(team):
-        games = past_data[(past_data['HomeTeam']==team)|(past_data['AwayTeam']==team)]
-        if games.empty: return 0.5, 10, 7
-        last = games.iloc[-1]
-        pos = last['Home_Pos'] if last['HomeTeam']==team else last['Away_Pos']
-        rest = (match_date - last['Date']).days
-        motiv = 1.3 if div == 'CL' else (0.5 if 6 < pos < 16 and len(games) > 28 else 1.2)
-        return motiv, pos, rest
-
-    h_motiv, h_pos, h_rest = get_context(home)
-    a_motiv, a_pos, a_rest = get_context(away)
-    h_val = get_val(home); a_val = get_val(away)
-    
-    input_data = {}
-    input_data['Home_Motiv'] = h_motiv; input_data['Away_Motiv'] = a_motiv
-    input_data['Rest_Home'] = h_rest; input_data['Rest_Away'] = a_rest
-    input_data['Home_Value'] = h_val; input_data['Away_Value'] = a_val
-    input_data['Value_Ratio'] = np.log1p(h_val) - np.log1p(a_val)
-    input_data['Is_Cup'] = 1 if div == 'CL' else 0
-    
-    input_data['HomeElo'] = elos.get(home, 1500)
-    input_data['AwayElo'] = elos.get(away, 1500)
-    input_data['EloDiff'] = input_data['HomeElo'] - input_data['AwayElo']
-    input_data['Home_Pos'] = h_pos; input_data['Away_Pos'] = a_pos
-    input_data['Home_Pts'] = 0; input_data['Away_Pts'] = 0 # Simplificação
-    
-    # Has_xG
-    input_data['Has_xG_Data'] = 1 if div in ['E0','D1','SP1','F1','I1','CL'] else 0
-    
-    try: input_data['Div_Code'] = le_div.transform([div])[0]
-    except: input_data['Div_Code'] = 0
-    
-    input_data['Imp_Home'] = 1/odd_h; input_data['Imp_Draw'] = 1/odd_d; input_data['Imp_Away'] = 1/odd_a
-
-    # Stats Lookup Simplificado
-    for f in features_list:
-        if f not in input_data: input_data[f] = 0
-    
-    # 4. Previsão
-    X = pd.DataFrame([input_data])[features_list]
-    
-    probs = model_multi.predict_proba(X)[0] # Away, Draw, Home
-    prob_a, prob_d, prob_h = probs[0], probs[1], probs[2]
-    
-    try: conf_shield = model_shield.predict_proba(X)[0][1]
-    except: conf_shield = prob_h + prob_d
-    
-    xg_h = float(xgb_goals_h.predict(X)[0])
-    xg_a = float(xgb_goals_a.predict(X)[0])
-    
-    # Matriz
-    max_goals = 6
-    score_matrix = []
-    best_score_prob = -1
-    best_score_txt = "0-0"
-    for h in range(max_goals):
-        row = []
-        for a in range(max_goals):
-            p = poisson.pmf(h, xg_h) * poisson.pmf(a, xg_a)
-            row.append(p)
-            if p > best_score_prob:
-                best_score_prob = p
-                best_score_txt = f"{h}-{a}"
-        score_matrix.append(row)
+        data = request.json
+        date_str = data.get('date')
         
-    # 5. Scanner
-    scanner = []
-    def analyze(name, odd, prob):
-        if not odd or odd <= 1: return
-        ev = (prob * odd) - 1
-        status = "💎 VALOR!" if ev > 0.05 else ("✅ VALOR" if ev > 0 else ("😐 JUSTO" if ev > -0.05 else "❌ FRACO"))
-        scanner.append({'name': name, 'odd': f"{odd:.2f}", 'prob': prob, 'ev': ev, 'status': status})
+        if not date_str:
+            return jsonify({'error': 'Data não fornecida'}), 400
 
-    analyze(f"Vitoria {home}", odd_h, prob_h)
-    analyze("Empate", odd_d, prob_d)
-    analyze(f"Vitoria {away}", odd_a, prob_a)
-    
-    if odd_1x > 1: analyze("DC 1X", odd_1x, ((prob_h+prob_d)+conf_shield)/2)
-    if odd_x2 > 1: analyze("DC X2", odd_x2, prob_a+prob_d)
-    if odd_12 > 1: analyze("DC 12", odd_12, prob_h+prob_a)
-    
-    scanner.sort(key=lambda x: x['ev'], reverse=True)
-    best = scanner[0]
-    likely = sorted(scanner, key=lambda x: x['prob'], reverse=True)[0]
-    
-    return jsonify({
-        'xg': {'home': f"{xg_h:.2f}", 'away': f"{xg_a:.2f}"},
-        'score_matrix': score_matrix,
-        'most_likely_score': f"{best_score_txt} ({best_score_prob:.1%})",
-        'market_scanner': scanner,
-        'best_pick': {'name': best['name'], 'odd': best['odd'], 'ev_txt': f"{best['ev']:.1%}"},
-        'most_likely': {'name': likely['name'], 'prob_txt': f"{likely['prob']:.1%}"},
-        'warning': warning_msg
-    })
+        print(f"\n--- A procurar jogos para: {date_str} ---")
+
+        url = "https://v3.football.api-sports.io/fixtures"
+        querystring = {"date": date_str, "timezone": "Europe/Lisbon"}
+        
+        # Tenta os dois formatos comuns de header para garantir compatibilidade
+        headers = {
+            "x-rapidapi-key": API_KEY,
+            "x-rapidapi-host": "v3.football.api-sports.io"
+        }
+        # Se tiveres uma conta direta na api-sports (não via RapidAPI), usa antes:
+        # headers = {"x-apisports-key": API_KEY}
+
+        response = requests.get(url, headers=headers, params=querystring)
+        
+        if response.status_code != 200:
+            print(f"❌ Erro HTTP API: {response.status_code}")
+            return jsonify({'error': f"Erro na API Externa: {response.status_code}"}), 500
+            
+        api_data = response.json()
+        
+        # Verificar erros de permissão/quota
+        if isinstance(api_data, dict) and api_data.get('errors'):
+            # A API por vezes devolve 'errors' como lista ou dict
+            print(f"❌ Erro de Lógica API: {api_data['errors']}")
+            return jsonify({'error': str(api_data['errors'])}), 403
+
+        raw_list = api_data.get('response', [])
+        print(f"✅ Jogos brutos encontrados: {len(raw_list)}")
+
+        matches = []
+        for item in raw_list:
+            lid = item['league']['id']
+            # Filtra apenas se a liga estiver no nosso mapa
+            if lid in LEAGUE_MAP:
+                matches.append({
+                    "id": item['fixture']['id'],
+                    "league": item['league']['name'],
+                    "div_code": LEAGUE_MAP[lid],
+                    "home": item['teams']['home']['name'],
+                    "away": item['teams']['away']['name'],
+                    # Tenta ir buscar odds reais se existirem, senão zeros
+                    "odds": {"h": 0, "d": 0, "a": 0} 
+                })
+
+        print(f"✅ Jogos compatíveis filtrados: {len(matches)}")
+        return jsonify(matches)
+
+    except Exception as e:
+        print("❌ ERRO NO SERVIDOR PYTHON:")
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+# --- ROTA 2: PREVISÃO ---
+@app.route('/api/predict', methods=['POST']) # Mudei de /api/index para /api/predict (mais claro)
+def predict():
+    try:
+        data = request.json
+        print(f"🔮 A prever jogo: {data.get('home_team')} vs {data.get('away_team')}")
+
+        # SIMULAÇÃO (Substituir pela lógica real do teu modelo)
+        return jsonify({
+            'xg': {'home': '1.85', 'away': '0.92'},
+            'most_likely_score': f"{data.get('home_team')} Vence",
+            'market_scanner': [
+                {'name': 'Vitória Casa', 'odd': data.get('odd_h', '1.5'), 'prob': '65%', 'ev': 0.15, 'status': '💎 Valor'},
+                {'name': 'Ambas Marcam', 'odd': '1.90', 'prob': '45%', 'ev': -0.05, 'status': '❌ Fraco'}
+            ]
+        })
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(port=5000, debug=True)

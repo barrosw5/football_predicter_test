@@ -3,150 +3,76 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Football Predictor ⚽</title>
+    <title>AI Football Predictor Pro</title>
     <link rel="stylesheet" href="style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="container">
+    <div class="app-wrapper">
         <header>
-            <h1>⚽ AI Predictor</h1>
-            <p>Previsão profissional com xG, Elo e Valor Esperado</p>
+            <div class="logo-area">
+                <i class="fa-solid fa-robot fa-2x"></i>
+                <h1>Neural<span class="highlight">Bet</span></h1>
+            </div>
+            <p class="status-indicator">Sistema: <span id="sys-status" class="status-dot">●</span> Online</p>
         </header>
 
         <main>
-            <form id="predictForm" class="card">
-                <div class="input-group">
-                    <label>Competição</label>
-                    <select id="division" required>
-                        <option value="E0">🇬🇧 Premier League</option>
-                        <option value="E1">🇬🇧 Championship</option>
-                        <option value="SP1">🇪🇸 La Liga</option>
-                        <option value="SP2">🇪🇸 La Liga 2</option>
-                        <option value="I1">🇮🇹 Serie A</option>
-                        <option value="I2">🇮🇹 Serie B</option>
-                        <option value="D1">🇩🇪 Bundesliga</option>
-                        <option value="D2">🇩🇪 Bundesliga 2</option>
-                        <option value="F1">🇫🇷 Ligue 1</option>
-                        <option value="F2">🇫🇷 Ligue 2</option>
-                        <option value="P1">🇵🇹 Liga Portugal</option>
-                        <option value="N1">🇳🇱 Eredivisie</option>
-                        <option value="B1">🇧🇪 Pro League</option>
-                        <option value="T1">🇹🇷 Süper Lig</option>
-                        <option value="G1">🇬🇷 Super League</option>
-                        <option value="SC0">🏴󠁧󠁢󠁳󠁣󠁴󠁿 Premiership</option>
-                        <option value="CL">🇪🇺 Champions League</option>
-                    </select>
-                </div>
-
+            <div class="card control-panel">
+                <h2><i class="fa-regular fa-calendar-check"></i> Seleção de Jogo</h2>
+                
                 <div class="row">
                     <div class="input-group">
-                        <label>Equipa Casa</label>
-                        <input type="text" id="home_team" placeholder="Ex: Sporting CP" required>
+                        <label>Data do Evento</label>
+                        <input type="date" id="match-date" class="modern-input">
                     </div>
-                    <div class="input-group">
-                        <label>Equipa Fora</label>
-                        <input type="text" id="away_team" placeholder="Ex: Benfica" required>
+                    <div class="input-group grow-2">
+                        <label>Jogos Disponíveis (API)</label>
+                        <select id="quick-match" class="modern-select" disabled>
+                            <option value="">Aguardar data...</option>
+                        </select>
                     </div>
-                </div>
-
-                <div class="input-group">
-                    <label>Data do Jogo</label>
-                    <input type="date" id="date" required>
-                </div>
-
-                <h3>💰 Odds (1X2) - Obrigatório</h3>
-                <div class="row three-cols">
-                    <div class="input-group">
-                        <label>1 (Casa)</label>
-                        <input type="number" id="odd_h" step="0.01" placeholder="1.91" required>
-                    </div>
-                    <div class="input-group">
-                        <label>X (Empate)</label>
-                        <input type="number" id="odd_d" step="0.01" placeholder="3.20" required>
-                    </div>
-                    <div class="input-group">
-                        <label>2 (Fora)</label>
-                        <input type="number" id="odd_a" step="0.01" placeholder="3.25" required>
-                    </div>
-                </div>
-
-                <h3>⚖️ Odds Dupla Chance (Opcional)</h3>
-                <div class="row three-cols">
-                    <div class="input-group">
-                        <label>1X</label>
-                        <input type="number" id="odd_1x" step="0.01" placeholder="1.27">
-                    </div>
-                    <div class="input-group">
-                        <label>12</label>
-                        <input type="number" id="odd_12" step="0.01" placeholder="1.23">
-                    </div>
-                    <div class="input-group">
-                        <label>X2</label>
-                        <input type="number" id="odd_x2" step="0.01" placeholder="1.72">
-                    </div>
-                </div>
-
-                <button type="submit" id="btnPredict">🔮 Calcular Previsão</button>
-            </form>
-
-            <div id="resultArea" class="hidden">
-                <div id="loader" class="loading hidden">
-                    <div class="spinner"></div>
-                    <p>A processar dados...</p>
-                </div>
-
-                <div id="resultContent" class="hidden">
-                    <div id="warningBox" class="warning-card hidden">
-                        ⚠️ <span id="warningText"></span>
-                    </div>
-
-                    <div class="card highlight-card">
-                        <h2 class="gold-text">🏆 Escolha Racional</h2>
-                        <div class="big-result" id="bestPick">--</div>
-                        <div class="stats-row">
-                            <span>Odd: <b id="bestOdd">--</b></span>
-                            <span>EV: <b id="bestEV" class="positive-val">--</b></span>
-                        </div>
-                        <hr class="divider">
-                        <div class="secondary-result">
-                            <span class="label">🎲 Mais Provável:</span>
-                            <span id="mostLikely">--</span>
-                            <span class="confidence" id="mostLikelyProb">--%</span>
-                        </div>
-                    </div>
-
-                    <div class="card">
-                        <h3>📊 Análise de Golos</h3>
-                        <div class="xg-container">
-                            <div class="xg-box">
-                                <span class="xg-label">Casa (xG)</span>
-                                <span class="xg-value" id="xgHome">--</span>
-                            </div>
-                            <div class="score-box">
-                                <span class="score-pred" id="scorePred">--</span>
-                                <span class="score-label">Placar Provável</span>
-                            </div>
-                            <div class="xg-box">
-                                <span class="xg-label">Fora (xG)</span>
-                                <span class="xg-value" id="xgAway">--</span>
-                            </div>
-                        </div>
-                        
-                        <div class="heatmap-wrapper">
-                            <p class="axis-label">Matriz de Probabilidade (Golos Fora →)</p>
-                            <div id="heatmap" class="heatmap-grid"></div>
-                        </div>
-                    </div>
-
-                    <div class="card">
-                        <h3>💰 Scanner de Mercado</h3>
-                        <div id="scannerList" class="scanner-list"></div>
-                    </div>
-
-                    <button onclick="window.location.reload()" class="btn-secondary">🔄 Nova Previsão</button>
                 </div>
             </div>
+
+            <form id="prediction-form" class="card fade-in">
+                <div class="teams-display">
+                    <div class="team-input">
+                        <label>Equipa Casa</label>
+                        <input type="text" id="home_team" name="home_team" placeholder="Home Team" required>
+                    </div>
+                    <div class="vs-badge">VS</div>
+                    <div class="team-input">
+                        <label>Equipa Fora</label>
+                        <input type="text" id="away_team" name="away_team" placeholder="Away Team" required>
+                    </div>
+                </div>
+
+                <div class="odds-panel">
+                    <div class="odd-box">
+                        <label>1 (Casa)</label>
+                        <input type="number" step="0.01" id="odd_h" name="odd_h" placeholder="1.00" required>
+                    </div>
+                    <div class="odd-box">
+                        <label>X (Empate)</label>
+                        <input type="number" step="0.01" id="odd_d" name="odd_d" placeholder="1.00" required>
+                    </div>
+                    <div class="odd-box">
+                        <label>2 (Fora)</label>
+                        <input type="number" step="0.01" id="odd_a" name="odd_a" placeholder="1.00" required>
+                    </div>
+                    
+                    <input type="hidden" id="division" name="division" value="E0">
+                </div>
+
+                <button type="submit" class="btn-predict">
+                    <span>Gerar Análise IA</span>
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                </button>
+            </form>
+
+            <div id="result-area" class="result-wrapper"></div>
         </main>
     </div>
     <script src="script.js"></script>
