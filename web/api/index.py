@@ -9,15 +9,16 @@ import os
 app = Flask(__name__)
 CORS(app)
 
-# Carregar o modelo (tenta caminhos diferentes para local vs vercel)
+# Carregar o cérebro
 try:
-    path = os.path.join(os.path.dirname(__file__), '../football_brain.pkl')
-    artifacts = joblib.load(path)
-except:
-    try:
-        artifacts = joblib.load('football_brain.pkl')
-    except:
-        artifacts = joblib.load('../football_brain.pkl')
+    # Procura o ficheiro na mesma pasta onde este script está (pasta 'api')
+    model_path = os.path.join(os.path.dirname(__file__), 'football_brain.pkl')
+    artifacts = joblib.load(model_path)
+except Exception as e:
+    # Se falhar, mostra o erro no log do Vercel para sabermos o que foi
+    print(f"ERRO AO CARREGAR MODELO: {e}")
+    # Cria um artefacto vazio para não crashar o import, mas vai dar erro na previsão
+    artifacts = None
 
 model_multi = artifacts['model_multi']
 model_sniper = artifacts['model_sniper']
