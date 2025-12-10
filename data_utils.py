@@ -8,6 +8,7 @@ import json
 import kagglehub
 import time
 import random
+import cloudscraper # <--- O SEGREDO ESTÁ AQUI
 
 # --- CONFIGURAÇÃO DE CONSTANTES ---
 DATA_FILE = 'europe_football_full.csv'
@@ -16,7 +17,7 @@ MARKET_VALUE_FILE = 'market_values.csv'
 
 def clean_team_name(name):
     name_map = {
-        # --- PORTUGAL (NOVO!) ---
+        # --- PORTUGAL ---
         'Sp Braga': 'Braga', 'SC Braga': 'Braga',
         'Sp Lisbon': 'Sporting CP', 'Sporting Lisbon': 'Sporting CP', 'Sporting': 'Sporting CP',
         'Benfica': 'Benfica', 'SL Benfica': 'Benfica',
@@ -36,6 +37,37 @@ def clean_team_name(name):
         'Santa Clara': 'Santa Clara', 'CD Santa Clara': 'Santa Clara',
         'AVS': 'AVS', 'AVS FS': 'AVS',
 
+        # --- HOLANDA ---
+        'PSV Eindhoven': 'PSV', 'PSV': 'PSV',
+        'Ajax': 'Ajax', 'Ajax Amsterdam': 'Ajax',
+        'Feyenoord': 'Feyenoord', 'Feyenoord Rotterdam': 'Feyenoord',
+        'AZ Alkmaar': 'AZ Alkmaar', 'AZ': 'AZ Alkmaar',
+        'Twente': 'Twente', 'FC Twente': 'Twente',
+
+        # --- BÉLGICA ---
+        'Club Brugge': 'Club Brugge', 'Brugge': 'Club Brugge',
+        'Anderlecht': 'Anderlecht', 'RSC Anderlecht': 'Anderlecht',
+        'Gent': 'Gent', 'KAA Gent': 'Gent',
+        'Genk': 'Genk', 'KRC Genk': 'Genk',
+        'Union St Gilloise': 'Union SG', 'Royale Union Saint-Gilloise': 'Union SG',
+
+        # --- TURQUIA ---
+        'Galatasaray': 'Galatasaray',
+        'Fenerbahce': 'Fenerbahce', 'Fenerbahçe': 'Fenerbahce',
+        'Besiktas': 'Besiktas', 'Beşiktaş': 'Besiktas',
+        'Trabzonspor': 'Trabzonspor',
+        'Basaksehir': 'Basaksehir',
+
+        # --- GRÉCIA ---
+        'Olympiakos': 'Olympiacos', 'Olympiacos': 'Olympiacos',
+        'PAOK': 'PAOK', 'PAOK Salonika': 'PAOK',
+        'Panathinaikos': 'Panathinaikos',
+        'AEK': 'AEK Athens', 'AEK Athens': 'AEK Athens',
+
+        # --- ESCÓCIA ---
+        'Celtic': 'Celtic',
+        'Rangers': 'Rangers',
+
         # --- INGLATERRA ---
         'Manchester United': 'Man United', 'Manchester City': 'Man City',
         'Newcastle United': 'Newcastle', 'West Ham United': 'West Ham', 
@@ -44,6 +76,9 @@ def clean_team_name(name):
         'Tottenham Hotspur': 'Tottenham', 'Nottingham Forest': "Nott'm Forest", 
         'Sheffield United': 'Sheffield United', 'Luton': 'Luton', 
         'Brentford': 'Brentford', 'Bournemouth': 'Bournemouth',
+        'West Brom': 'West Bromwich Albion', 'West Bromwich': 'West Bromwich Albion',
+        'QPR': 'Queens Park Rangers', 'Blackburn': 'Blackburn Rovers',
+        'Coventry': 'Coventry City', 'Stoke': 'Stoke City', 'Hull': 'Hull City',
         
         # --- ALEMANHA ---
         'Bayern Munich': 'Bayern Munich', 'Bayern München': 'Bayern Munich',
@@ -61,6 +96,9 @@ def clean_team_name(name):
         'Koln': 'FC Koln', 'FC Köln': 'FC Koln',
         'Hertha': 'Hertha Berlin', 'Hertha BSC': 'Hertha Berlin',
         'Schalke 04': 'Schalke 04', 'Schalke': 'Schalke 04',
+        'Hamburg': 'Hamburger SV', 'Hamburger': 'Hamburger SV',
+        'Hannover': 'Hannover 96', 'Kaiserslautern': 'FC Kaiserslautern',
+        'Nurnberg': 'FC Nurnberg', 'Dusseldorf': 'Fortuna Dusseldorf',
 
         # --- ESPANHA ---
         'Ath Bilbao': 'Athletic Club', 'Athletic Bilbao': 'Athletic Club',
@@ -73,6 +111,8 @@ def clean_team_name(name):
         'Valencia': 'Valencia', 'Valladolid': 'Real Valladolid', 
         'Villarreal': 'Villarreal', 'Girona': 'Girona',
         'Alaves': 'Alaves', 'Cadiz': 'Cadiz', 'Almeria': 'Almeria',
+        'Sp Gijon': 'Sporting Gijon', 'Zaragoza': 'Real Zaragoza',
+        'Levante': 'Levante', 'Tenerife': 'Tenerife', 'Eibar': 'Eibar',
 
         # --- FRANÇA ---
         'Paris SG': 'Paris Saint Germain', 'PSG': 'Paris Saint Germain',
@@ -82,6 +122,8 @@ def clean_team_name(name):
         'Reims': 'Reims', 'Strasbourg': 'Strasbourg', 'Toulouse': 'Toulouse',
         'Brest': 'Brest', 'Lorient': 'Lorient', 'Metz': 'Metz',
         'St Etienne': 'Saint-Etienne', 'Saint-Etienne': 'Saint-Etienne',
+        'Bordeaux': 'Girondins Bordeaux', 'Auxerre': 'Auxerre',
+        'Ajaccio': 'AC Ajaccio', 'Troyes': 'Troyes',
 
         # --- ITÁLIA ---
         'Inter': 'Inter', 'Internazionale': 'Inter',
@@ -91,44 +133,73 @@ def clean_team_name(name):
         'Bologna': 'Bologna', 'Verona': 'Verona', 'Hellas Verona': 'Verona',
         'Empoli': 'Empoli', 'Lecce': 'Lecce', 'Sassuolo': 'Sassuolo',
         'Monza': 'Monza', 'Genoa': 'Genoa', 'Salernitana': 'Salernitana',
+        'Parma': 'Parma', 'Sampdoria': 'Sampdoria', 'Cremonese': 'Cremonese',
+        'Venezia': 'Venezia', 'Palermo': 'Palermo', 'Bari': 'Bari',
 
         # --- OUTROS (CHAMPIONS LEAGUE) ---
-        'Ajax': 'Ajax', 'PSV Eindhoven': 'PSV Eindhoven', 'Feyenoord': 'Feyenoord',
-        'Club Brugge': 'Club Brugge', 'Shakhtar Donetsk': 'Shakhtar Donetsk',
-        'Galatasaray': 'Galatasaray', 'Celtic': 'Celtic', 'Rangers': 'Rangers',
+        'Shakhtar Donetsk': 'Shakhtar Donetsk',
         'Salzburg': 'RB Salzburg', 'Red Bull Salzburg': 'RB Salzburg'
     }
     return name_map.get(name, name)
 
 def scrape_understat_season(year, league_name):
-    # Ignorar anos futuros
-    if year > 2024: 
-        return pd.DataFrame()
+    # Proteção: Understat não tem dados futuros
+    if year > 2024: return pd.DataFrame()
 
     print(f"🕷️ A recolher xG ({league_name}) de {year}/{year+1}...")
     url = f"https://understat.com/league/{league_name}/{year}"
     
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-        'Connection': 'keep-alive',
-    }
+    # 1. Usar CloudScraper em vez de Requests (Passa pelo Cloudflare)
+    scraper = cloudscraper.create_scraper()
     
-    time.sleep(random.uniform(2, 4)) 
+    # Pausa aleatória para parecer humano
+    time.sleep(random.uniform(2, 5)) 
 
     try:
-        response = requests.get(url, headers=headers, timeout=15)
-        if response.status_code != 200: return pd.DataFrame()
+        response = scraper.get(url)
         
-        match = re.search(r"datesData\s*=\s*JSON\.parse\('(.*?)'\)", response.text)
-        if not match: return pd.DataFrame()
+        if response.status_code != 200: 
+            print(f"   ❌ Erro HTTP: {response.status_code}")
+            return pd.DataFrame()
+        
+        # 2. Regex Universal: Procura qualquer JSON.parse, não importa as aspas
+        # Captura o conteúdo dentro de: JSON.parse('...') ou JSON.parse("...")
+        candidates = re.findall(r"JSON\.parse\s*\(\s*(['\"])(.*?)\1\s*\)", response.text, re.DOTALL)
+        
+        data = None
+        
+        # Procura nos candidatos encontrados
+        for quote, content in candidates:
+            try:
+                # Descodificar caracteres hexadecimais (\x5B -> [)
+                json_string = codecs.decode(content, 'unicode_escape')
+                temp_data = json.loads(json_string)
+                
+                # Validação: É a lista de jogos?
+                # Deve ser uma lista e o primeiro item deve ter 'h' (home), 'a' (away) e 'goals'
+                if isinstance(temp_data, list) and len(temp_data) > 0:
+                    if all(k in temp_data[0] for k in ['h', 'a', 'goals', 'xG']):
+                        data = temp_data
+                        # print(f"   ✅ Encontrado! ({len(data)} jogos)") # Debug opcional
+                        break
+            except:
+                continue
+        
+        # Fallback: Se não encontrou com JSON.parse, tenta procurar 'var datesData = [...]' direto
+        if not data:
+            direct_match = re.search(r"var\s+datesData\s*=\s*(\[.*?\]);", response.text, re.DOTALL)
+            if direct_match:
+                try:
+                    data = json.loads(direct_match.group(1))
+                except: pass
+
+        if not data:
+            print(f"   ⚠️ Proteção ativa ou dados não encontrados para {league_name}.")
+            return pd.DataFrame()
             
-        json_data = codecs.decode(match.group(1), 'unicode_escape')
-        data = json.loads(json_data)
-        
         matches = []
         for m in data:
-            if m['isResult']:
+            if m.get('isResult', False):
                 matches.append({
                     'Date': m['datetime'][:10],
                     'HomeTeam': m['h']['title'],
@@ -140,24 +211,28 @@ def scrape_understat_season(year, league_name):
                     'League': league_name
                 })
         return pd.DataFrame(matches)
-    except Exception:
+        
+    except Exception as e:
+        print(f"   ❌ Erro técnico: {e}")
         return pd.DataFrame()
 
 def get_main_data(start, end):
-    # 1. Tentar carregar localmente
     if os.path.exists(DATA_FILE):
         print(f"📂 Carregando dados locais: {DATA_FILE}")
         df = pd.read_csv(DATA_FILE)
         df['Date'] = pd.to_datetime(df['Date'], dayfirst=True, errors='coerce')
         return df
     
-    # 2. Se não existir, baixar e salvar
     print("🌐 A descarregar dados das Ligas (Football-Data)...")
     dfs = []
     base_url = "https://www.football-data.co.uk/mmz4281/{}/{}.csv"
     
-    # ADICIONEI 'P1' (LIGA PORTUGAL) AQUI
-    divisions = ['E0', 'D1', 'SP1', 'F1', 'I1', 'P1'] 
+    # Lista Completa de Ligas
+    divisions = [
+        'E0', 'D1', 'SP1', 'F1', 'I1', # Top 5
+        'E1', 'D2', 'SP2', 'F2', 'I2', # 2ªs Divisões
+        'P1', 'N1', 'B1', 'T1', 'G1', 'SC0' # Outras
+    ] 
     
     for year in range(start, end + 1):
         season = f"{str(year)[-2:]}{str(year+1)[-2:]}"
@@ -173,12 +248,12 @@ def get_main_data(start, end):
         
     full_df = pd.concat(dfs, ignore_index=True).dropna(subset=['Date', 'FTR'])
     
-    # Limpeza de Nomes Imediata para garantir consistência
+    # Limpeza de Nomes
     full_df['HomeTeam'] = full_df['HomeTeam'].apply(clean_team_name)
     full_df['AwayTeam'] = full_df['AwayTeam'].apply(clean_team_name)
 
     full_df.to_csv(DATA_FILE, index=False)
-    print(f"✅ Dados das Ligas (incluindo Portugal) guardados em: {DATA_FILE}")
+    print(f"✅ Dados das Ligas (1ª e 2ª Divisões) guardados em: {DATA_FILE}")
     
     return full_df.sort_values('Date').reset_index(drop=True)
 
@@ -217,11 +292,10 @@ def get_understat_data(start_year, end_year):
         df['Date'] = pd.to_datetime(df['Date']) 
         return df
 
-    print("🌐 A iniciar scraping Understat...")
+    print("🌐 A iniciar scraping Understat (com CloudScraper)...")
     dfs = []
     
     for y in range(start_year, end_year + 1):
-        # NOTA: Understat não tem Portugal, por isso não adicionamos aqui
         dfs.append(scrape_understat_season(y, 'EPL'))
         dfs.append(scrape_understat_season(y, 'Bundesliga'))
         dfs.append(scrape_understat_season(y, 'La_liga'))
@@ -235,6 +309,8 @@ def get_understat_data(start_year, end_year):
         df_final = pd.concat(valid_dfs, ignore_index=True)
         df_final['HomeTeam'] = df_final['HomeTeam'].apply(clean_team_name)
         df_final['AwayTeam'] = df_final['AwayTeam'].apply(clean_team_name)
+        
+        # GRAVAR LOCALMENTE
         df_final.to_csv(XG_FILE, index=False)
         print(f"✅ Dados Understat guardados.")
         return df_final
