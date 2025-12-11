@@ -89,8 +89,6 @@ def get_fixtures():
                     'awayTeam': f['teams']['away']['name'],
                     'status_short': f['fixture']['status']['short']
                 })
-            # else:
-            #     print(f"⚠️ IGNORADO: ID {lid} - {lname}")
 
         supported_matches.sort(key=lambda x: (x['league_name'], x['match_time']))
         
@@ -132,15 +130,14 @@ def get_odds():
         if not target_bookie:
             target_bookie = next((b for b in all_bookmakers if "Bet365" in b['name']), None)
             
-        # 3. Se não houver nenhum, usa o primeiro da lista (Ex: 1xBet, Bwin, etc.)
+        # 3. Se não houver nenhum, usa o primeiro da lista
         if not target_bookie:
             target_bookie = all_bookmakers[0]
 
-        print(f"✅ Odds obtidas de: {target_bookie['name']}") # Para saberes qual foi usada
+        print(f"✅ Odds obtidas de: {target_bookie['name']}")
         
         bets = target_bookie['bets']
         
-        # Extração de Odds (Igual ao anterior)
         # 1. Mercado 1X2 (ID = 1)
         match_winner = next((b for b in bets if b['id'] == 1), None)
         odds_1x2 = {'h': 0, 'd': 0, 'a': 0}
@@ -171,7 +168,7 @@ def get_odds():
         return jsonify({"error": "Erro servidor"})
 
 
-# --- ROTA 3: PREVISÃO (PREDICT) ---
+# --- ROTA 3: PREVISÃO (COM LÓGICA "LAST 5") ---
 @app.route('/api/predict', methods=['POST'])
 def predict():
     global model_multi, xgb_goals_h, xgb_goals_a, df_ready
@@ -185,13 +182,64 @@ def predict():
         div = data.get('division', 'E0')
         date_str = data.get('date')
         
-        # 2. Features
+        # --- 2. PREENCHIMENTO DE FEATURES INTELIGENTE (Last 5 Logic) ---
         input_data = {}
-        for f in features: input_data[f] = df_ready[f].mean() if not df_ready.empty and f in df_ready else 0
         
+        # Garante que o histórico está ordenado por data para pegar o último jogo
+        if 'Date' in df_ready.columns:
+            history = df_ready.sort_values('Date')
+        else:
+            history = df_ready
+            
+        # Detecta nomes das colunas de equipas (pode variar dependendo do treino)
+        h_col = 'Home' if 'Home' in df_ready.columns else 'HomeTeam'
+        a_col = 'Away' if 'Away' in df_ready.columns else 'AwayTeam'
+        has_team_cols = (h_col in df_ready.columns) and (a_col in df_ready.columns)
+
+        for f in features:
+            val = None
+            
+            # Se for uma feature dependente da equipa (ex: Home_Goals_Last_5)
+            if has_team_cols:
+                # Descobre qual a equipa alvo desta feature
+                target_team = None
+                if f.startswith(('Home', 'H_', 'h_')): target_team = home
+                elif f.startswith(('Away', 'A_', 'a_')): target_team = away
+                
+                if target_team:
+                    # Filtra os jogos dessa equipa no histórico
+                    team_rows = history[(history[h_col] == target_team) | (history[a_col] == target_team)]
+                    
+                    if not team_rows.empty:
+                        # Pega na ÚLTIMA linha conhecida (o estado mais atual da equipa)
+                        last_row = team_rows.iloc[-1]
+                        
+                        # Verifica se a equipa jogou em Casa ou Fora nesse último jogo
+                        was_home_in_last = (last_row[h_col] == target_team)
+                        
+                        # Lógica de Mapeamento:
+                        # Se queremos a feature "Home_XG" para o Benfica (que joga em Casa hoje),
+                        # mas no último jogo o Benfica foi Fora, temos de ler a coluna "Away_XG" desse jogo anterior.
+                        col_to_read = f
+                        if not was_home_in_last:
+                            # Inverte o nome da coluna para ler o dado correto do histórico
+                            if 'Home' in f: col_to_read = f.replace('Home', 'Away')
+                            elif 'H_' in f: col_to_read = f.replace('H_', 'A_')
+                            elif 'Away' in f: col_to_read = f.replace('Away', 'Home')
+                            elif 'A_' in f: col_to_read = f.replace('A_', 'H_')
+                        
+                        if col_to_read in last_row:
+                            val = last_row[col_to_read]
+
+            # Fallback: Se não encontrou valor específico (equipa nova ou feature genérica), usa a média
+            if val is None:
+                val = df_ready[f].mean() if not df_ready.empty and f in df_ready else 0
+            
+            input_data[f] = val
+
+        # ELO Ratings (Sempre Frescos)
         match_date = pd.to_datetime(date_str)
-        past = df_ready[df_ready['Date'] < match_date] if not df_ready.empty else pd.DataFrame()
-        if not past.empty:
+        if not df_ready.empty:
             h_elo = current_elos.get(home, 1500)
             a_elo = current_elos.get(away, 1500)
             input_data['HomeElo'] = h_elo; input_data['AwayElo'] = a_elo
@@ -202,10 +250,9 @@ def predict():
             odd_h = float(data.get('odd_h', 0))
             odd_d = float(data.get('odd_d', 0))
             odd_a = float(data.get('odd_a', 0))
-            # Tratamento seguro das Odds Duplas (podem vir vazias)
-            odd_1x = float(data.get('odd_1x')) if data.get('odd_1x') and data.get('odd_1x') != '' else None
-            odd_12 = float(data.get('odd_12')) if data.get('odd_12') and data.get('odd_12') != '' else None
-            odd_x2 = float(data.get('odd_x2')) if data.get('odd_x2') and data.get('odd_x2') != '' else None
+            odd_1x = float(data.get('odd_1x')) if data.get('odd_1x') else None
+            odd_12 = float(data.get('odd_12')) if data.get('odd_12') else None
+            odd_x2 = float(data.get('odd_x2')) if data.get('odd_x2') else None
         except: return jsonify({"error": "Odds inválidas"}), 400
 
         if odd_h > 0: input_data['Imp_Home'] = 1/odd_h
@@ -215,7 +262,7 @@ def predict():
         try: input_data['Div_Code'] = le_div.transform([div])[0]
         except: input_data['Div_Code'] = 0
 
-        # 3. Previsão
+        # 3. Execução do Modelo
         X = pd.DataFrame([input_data])[features]
         exp_h = float(xgb_goals_h.predict(X)[0])
         exp_a = float(xgb_goals_a.predict(X)[0])
