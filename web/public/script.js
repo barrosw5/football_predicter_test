@@ -13,7 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const awayInput = document.getElementById('input-away');
 
     // --- CAIXAS DAS ODDS ---
-    // Função auxiliar para encontrar o input pelo Name ou ID
     const getInput = (name) => document.querySelector(`input[name="${name}"]`) || document.getElementById(name);
 
     const inputH = getInput('odd_h');
@@ -23,7 +22,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const input12 = getInput('odd_12');
     const inputX2 = getInput('odd_x2');
 
-    // Array com todos os inputs para facilitar limpar/preencher em loop
     const allOddInputs = [inputH, inputD, inputA, input1X, input12, inputX2];
 
     // Define a data de hoje
@@ -31,14 +29,13 @@ document.addEventListener('DOMContentLoaded', () => {
     dateInput.value = today;
     dateHidden.value = today;
 
-    // --- FUNÇÃO AUXILIAR: FORMATAR ODDS (2 Casas Decimais) ---
+    // --- FUNÇÃO DE FORMATAÇÃO FORÇADA (2 CASAS) ---
     const formatOdd = (val) => {
-        if (!val || val === 0 || val === "0" || val === "N/A") return "";
-        // Converte para float e fixa em 2 casas (ex: 1.5 -> "1.50")
-        return parseFloat(val).toFixed(2);
+        if (!val || val == 0 || val === "N/A") return "";
+        return Number(val).toFixed(2);
     };
 
-    // --- 1. PREENCHIMENTO AUTOMÁTICO (EQUIPAS + ODDS) ---
+    // --- 1. PREENCHIMENTO AUTOMÁTICO ---
     matchSelect.addEventListener('change', async () => {
         const selectedValue = matchSelect.value;
         
@@ -46,21 +43,18 @@ document.addEventListener('DOMContentLoaded', () => {
             try {
                 const matchData = JSON.parse(selectedValue);
                 
-                // A. Preenche Nomes das Equipas
+                // Preenche Equipas
                 if(homeInput) homeInput.value = matchData.home_team || matchData.homeTeam;
                 if(awayInput) awayInput.value = matchData.away_team || matchData.awayTeam;
                 
-                // B. Feedback Visual: Coloca placeholder "A carregar..." e limpa valor
+                // Feedback "A carregar..."
                 allOddInputs.forEach(el => { 
-                    if(el) { 
-                        el.value = ""; 
-                        el.placeholder = "A carregar..."; 
-                    } 
+                    if(el) { el.value = ""; el.placeholder = "A carregar..."; } 
                 });
 
-                // C. Vai buscar as ODDS à API
+                // Pedir Odds
                 if (matchData.id) {
-                    console.log(`📡 A pedir odds para o jogo ID: ${matchData.id}`);
+                    console.log(`📡 A pedir odds ID: ${matchData.id}`);
                     
                     const res = await fetch(`${API_BASE}/api/odds`, {
                         method: 'POST',
@@ -69,14 +63,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                     
                     const oddsData = await res.json();
-                    console.log("📦 Odds recebidas:", oddsData);
                     
                     if (oddsData.error) {
                         console.warn("Aviso API:", oddsData.error);
-                        // Se der erro (ex: limite atingido), põe "N/A" no placeholder
                         allOddInputs.forEach(el => { if(el) el.placeholder = "N/A"; });
                     } else {
-                        // D. Preenche os valores com formatação (1.50)
+                        // APLICA A FORMATAÇÃO AQUI
                         if(inputH) inputH.value = formatOdd(oddsData.odd_h);
                         if(inputD) inputD.value = formatOdd(oddsData.odd_d);
                         if(inputA) inputA.value = formatOdd(oddsData.odd_a);
@@ -85,29 +77,26 @@ document.addEventListener('DOMContentLoaded', () => {
                         if(input12) input12.value = formatOdd(oddsData.odd_12);
                         if(inputX2) inputX2.value = formatOdd(oddsData.odd_x2);
                         
-                        // Restaura o placeholder normal
                         allOddInputs.forEach(el => el.placeholder = "1.00");
                     }
                 }
                 
             } catch (e) {
-                console.error("Erro ao processar dados:", e);
+                console.error("Erro:", e);
                 allOddInputs.forEach(el => el.placeholder = "Erro");
             }
         } else {
-            // Limpa tudo se desmarcar o jogo
+            // Limpar
             if(homeInput) homeInput.value = "";
             if(awayInput) awayInput.value = "";
             allOddInputs.forEach(el => { if(el) { el.value = ""; el.placeholder = "1.00"; } });
         }
     });
 
-    // --- 2. FETCH JOGOS DA API ---
+    // --- 2. FETCH JOGOS ---
     async function fetchFixtures(date) {
         matchSelect.disabled = true;
         matchSelect.innerHTML = '<option>⏳ A carregar jogos...</option>';
-        
-        // Limpar inputs de equipas
         if(homeInput) homeInput.value = "";
         if(awayInput) awayInput.value = "";
 
@@ -117,7 +106,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ date: date })
             });
-            
             const matches = await res.json();
             matchSelect.innerHTML = '<option value="">-- Seleciona um Jogo --</option>';
 
@@ -125,13 +113,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 matchSelect.innerHTML = '<option value="">⚠️ Sem jogos suportados hoje</option>';
             } else {
                 const groups = {};
-                // Agrupar por Liga
                 matches.forEach(m => {
                     const league = `${m.league_name} (${m.country})`;
                     if (!groups[league]) groups[league] = [];
                     groups[league].push(m);
                 });
-
                 for (const [leagueName, games] of Object.entries(groups)) {
                     const group = document.createElement('optgroup');
                     group.label = leagueName;
@@ -139,9 +125,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const opt = document.createElement('option');
                         opt.value = JSON.stringify(m);
                         const statusIcon = (m.status_short === 'FT') ? '🏁' : '⏰';
-                        const home = m.home_team || m.homeTeam;
-                        const away = m.away_team || m.awayTeam;
-                        opt.textContent = `${m.match_time} ${statusIcon} ${home} vs ${away}`;
+                        opt.textContent = `${m.match_time} ${statusIcon} ${m.home_team} vs ${m.away_team}`;
                         group.appendChild(opt);
                     });
                     matchSelect.appendChild(group);
@@ -155,7 +139,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Atualizar lista quando muda a data
     dateInput.addEventListener('change', (e) => {
         dateHidden.value = e.target.value;
         fetchFixtures(e.target.value);
@@ -168,19 +151,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const mData = JSON.parse(matchSelect.value);
         
-        // Usamos os valores diretos dos inputs (inputH.value)
-        // Isto permite que a previsão funcione mesmo que tenhas escrito as odds à mão
         const payload = {
             date: dateHidden.value,
             home_team: mData.home_team || mData.homeTeam,
             away_team: mData.away_team || mData.awayTeam,
             division: mData.division || 'E0',
-            odd_h: inputH ? inputH.value : 0, 
-            odd_d: inputD ? inputD.value : 0, 
-            odd_a: inputA ? inputA.value : 0,
-            odd_1x: input1X ? input1X.value : 0, 
-            odd_12: input12 ? input12.value : 0, 
-            odd_x2: inputX2 ? inputX2.value : 0
+            odd_h: parseFloat(inputH.value) || 0, 
+            odd_d: parseFloat(inputD.value) || 0, 
+            odd_a: parseFloat(inputA.value) || 0,
+            odd_1x: parseFloat(input1X.value) || 0, 
+            odd_12: parseFloat(input12.value) || 0, 
+            odd_x2: parseFloat(inputX2.value) || 0
         };
 
         resultArea.innerHTML = '<div class="loading">🔮 A consultar os astros do futebol...</div>';
@@ -191,13 +172,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
-            
             const data = await res.json();
             if (data.error) throw new Error(data.error);
 
-            // --- RENDER HTML ---
+            // RENDER HTML
             const formatEV = (val) => (val * 100).toFixed(1) + "%";
 
+            // GERAÇÃO DO SCANNER COM NOVO LAYOUT
             let scannerHTML = data.scanner.map(s => {
                 let badgeClass = s.status.includes('MUITO') ? "badge-gem" : 
                                  s.status.includes('VALOR') ? "badge-good" : 
@@ -206,32 +187,52 @@ document.addEventListener('DOMContentLoaded', () => {
                            s.status.includes('VALOR') ? "✅ " : 
                            s.status.includes('JUSTO') ? "😐 " : "❌ ";
 
+                // AQUI ESTÁ A MUDANÇA VISUAL PEDIDA:
                 return `<div class="scanner-item">
                     <div class="market-name">${s.name}</div>
-                    <div class="data-col"><span class="data-val">@${s.odd.toFixed(2)}</span></div>
-                    <div class="data-col"><span class="data-val" style="color:var(--primary)">@${s.fair_odd}</span></div>
+                    
+                    <div class="data-col">
+                        <span style="font-weight:bold;">@${s.odd.toFixed(2)}</span>
+                        <span style="font-size:0.85em; color:#94a3b8; margin-left:4px;">(${s.odd_prob})</span>
+                    </div>
+                    
+                    <div class="data-col">
+                        <span style="font-weight:bold; color:var(--primary)">@${s.fair_odd}</span>
+                        <span style="font-size:0.85em; color:#94a3b8; margin-left:4px;">(${s.prob_txt})</span>
+                    </div>
+                    
                     <div class="status-badge ${badgeClass}">${icon}${s.status.replace(/.* /, '')}</div>
                 </div>`;
             }).join('');
 
-            let rationalHTML = data.rational ? `
-                <div style="background: rgba(16, 185, 129, 0.1); padding: 15px; border-left: 4px solid #10b981; margin-bottom: 10px; border-radius: 4px;">
-                    <h4 style="margin:0; color: #10b981;">🏆 Racional: ${data.rational.name}</h4>
-                    <div>EV: +${formatEV(data.rational.ev)}</div>
-                </div>` : '';
-            
-            let safeHTML = data.safe ? `
-                <div style="background: rgba(59, 130, 246, 0.1); padding: 15px; border-left: 4px solid #3b82f6; border-radius: 4px;">
-                    <h4 style="margin:0; color: #3b82f6;">🛡️ Seguro: ${data.safe.name}</h4>
-                    <div>Confiança: ${data.safe.prob_txt}</div>
-                </div>` : '';
-
+            // CABEÇALHO ATUALIZADO
             resultArea.innerHTML = `
                 <h3>${data.home} vs ${data.away}</h3>
                 <div style="text-align:center; font-size:1.5em; margin:10px 0;">${data.score.placar}</div>
-                <div class="scanner-container">${scannerHTML}</div>
-                ${rationalHTML}
-                ${safeHTML}
+                
+                <div class="scanner-container">
+                    <div class="scanner-header">
+                        <div>Mercado</div>
+                        <div style="text-align:center;">Casa de Apostas</div>
+                        <div style="text-align:center;">IA (Modelo)</div>
+                        <div style="text-align:center;">Valor</div>
+                    </div>
+                    ${scannerHTML}
+                </div>
+
+                <div style="margin-top:25px;">
+                    ${data.rational ? `
+                    <div style="background: rgba(16, 185, 129, 0.1); padding: 15px; border-left: 4px solid #10b981; margin-bottom: 10px; border-radius: 4px;">
+                        <h4 style="margin:0; color: #10b981;">🏆 Racional: ${data.rational.name}</h4>
+                        <div>EV: +${formatEV(data.rational.ev)}</div>
+                    </div>` : ''}
+                    
+                    ${data.safe ? `
+                    <div style="background: rgba(59, 130, 246, 0.1); padding: 15px; border-left: 4px solid #3b82f6; border-radius: 4px;">
+                        <h4 style="margin:0; color: #3b82f6;">🛡️ Seguro: ${data.safe.name}</h4>
+                        <div>Confiança: ${data.safe.prob_txt}</div>
+                    </div>` : ''}
+                </div>
             `;
 
         } catch (err) {
@@ -239,6 +240,5 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Iniciar a busca de jogos ao carregar a página
     fetchFixtures(dateInput.value);
 });

@@ -197,6 +197,7 @@ input[readonly] {
     color: var(--text-muted);
     font-size: 0.8rem;
     font-weight: bold;
+    align-items: center; /* Alinha verticalmente */
 }
 
 .scanner-item {
@@ -217,8 +218,10 @@ input[readonly] {
 
 .data-col {
     display: flex;
-    flex-direction: column;
-    font-size: 0.85rem;
+    flex-direction: column; /* Coloca um em cima do outro se não houver espaço */
+    align-items: center;    /* Centra tudo */
+    justify-content: center;
+    line-height: 1.2;       /* Melhora o espaçamento entre a Odd e a percentagem */
 }
 
 .data-perc {
@@ -257,4 +260,12 @@ input[readonly] {
     border: 1px solid var(--bad-color);
     border-radius: 6px;
     background: rgba(239, 68, 68, 0.1);
+}
+
+/* Se o ecrã for largo o suficiente, mete lado a lado */
+@media (min-width: 500px) {
+    .data-col {
+        flex-direction: row; /* Odd ao lado da percentagem */
+        align-items: baseline;
+    }
 }
