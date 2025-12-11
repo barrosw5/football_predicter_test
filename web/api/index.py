@@ -112,6 +112,12 @@ def get_fixtures():
                     'oddsFormat': 'decimal'
                 }
                 res = requests.get(url, params=params)
+
+                if 'x-requests-remaining' in res.headers:
+                    restantes = res.headers['x-requests-remaining']
+                    usados = res.headers['x-requests-used']
+                    print(f"\n📊 ESTADO DA API: Usaste {usados} pedidos. Ainda tens {restantes} este mês.\n")
+                    
                 if res.status_code == 200:
                     league_data = res.json()
                     api_cache[sport_key] = {'data': league_data, 'ts': current_time}
