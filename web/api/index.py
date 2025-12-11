@@ -13,14 +13,15 @@ CORS(app)
 
 API_KEY = "81f8d50f4cac1f4ac373794f18440676" 
 
+# Mapeamento de Ligas (Inclui agora Europa League e Conference League como 'CL')
 LEAGUE_MAP = {
     39: 'E0', 78: 'D1', 140: 'SP1', 61: 'F1', 135: 'I1',
     40: 'E1', 79: 'D2', 141: 'SP2', 62: 'F2', 136: 'I2',
     94: 'P1', 88: 'N1', 144: 'B1', 203: 'T1', 197: 'G1', 179: 'SC0',
     2: 'CL',
     # --- NOVAS LIGAS EUROPEIAS ---
-    3: 'CL',   # Liga Europa (Mapeada como Champions League)
-    848: 'CL'  # Liga Conferência (Mapeada como Champions League)
+    3: 'CL',   # Liga Europa
+    848: 'CL'  # Liga Conferência
 }
 
 # --- CARREGAMENTO ---
@@ -49,14 +50,14 @@ else:
     print(f"❌ Ficheiro não encontrado: {model_path}")
 
 
+# --- ROTA 1: BUSCAR JOGOS ---
 @app.route('/api/fixtures', methods=['POST'])
 def get_fixtures():
     try:
         data = request.get_json()
-        # URL da API
         url = "https://v3.football.api-sports.io/fixtures"
         
-        # 1. Pedimos jogos por DATA (sem filtrar status, para apanhar tudo)
+        # Pede todos os jogos do dia (sem filtrar status)
         params = {'date': data.get('date')}
         headers = {'x-rapidapi-key': API_KEY, 'x-rapidapi-host': "v3.football.api-sports.io"}
 
@@ -69,18 +70,15 @@ def get_fixtures():
 
         fixtures_data = response.json().get('response', [])
         total_games = len(fixtures_data)
-        
-        print(f"📦 Jogos recebidos da API (total): {total_games}")
-        
         supported_matches = []
 
-        # 2. FILTRAGEM ESTRITA COM DEBUG
         for f in fixtures_data:
             lid = f['league']['id']
-            lname = f['league']['name'] # Nome da liga para visualizarmos
+            lname = f['league']['name']
             
             if lid in LEAGUE_MAP:
                 supported_matches.append({
+                    'id': f['fixture']['id'], # IMPORTANTE: ID necessário para buscar odds
                     'home_team': f['teams']['home']['name'],
                     'away_team': f['teams']['away']['name'],
                     'division': LEAGUE_MAP[lid],
@@ -91,14 +89,12 @@ def get_fixtures():
                     'awayTeam': f['teams']['away']['name'],
                     'status_short': f['fixture']['status']['short']
                 })
-            else:
-                # 🛑 ESTE PRINT VAI MOSTRAR O QUE ESTÁ A SER IGNORADO
-                print(f"⚠️ IGNORADO: ID {lid} - {lname} ({f['league']['country']})")
+            # else:
+            #     print(f"⚠️ IGNORADO: ID {lid} - {lname}")
 
         supported_matches.sort(key=lambda x: (x['league_name'], x['match_time']))
         
-        print(f"✅ Jogos processados: {total_games} recebidos -> {len(supported_matches)} suportados pelo modelo.")
-        
+        print(f"✅ Jogos: {total_games} recebidos -> {len(supported_matches)} suportados.")
         return jsonify(supported_matches)
 
     except Exception as e:
@@ -106,6 +102,76 @@ def get_fixtures():
         traceback.print_exc()
         return jsonify([])
 
+
+# --- ROTA 2: BUSCAR ODDS (Prioridade: Betclic -> Bet365 -> Qualquer) ---
+@app.route('/api/odds', methods=['POST'])
+def get_odds():
+    try:
+        data = request.get_json()
+        fid = data.get('fixture_id')
+        
+        # Não definimos 'bookmaker' no pedido para recebermos a lista de todos
+        url = "https://v3.football.api-sports.io/odds"
+        params = {'fixture': fid} 
+        headers = {'x-rapidapi-key': API_KEY, 'x-rapidapi-host': "v3.football.api-sports.io"}
+        
+        response = requests.get(url, headers=headers, params=params)
+        resp_json = response.json()
+        
+        if not resp_json.get('response'):
+            return jsonify({"error": "Odds indisponíveis"})
+            
+        all_bookmakers = resp_json['response'][0]['bookmakers']
+        if not all_bookmakers: return jsonify({"error": "Sem bookies"})
+        
+        # --- LÓGICA DE PRIORIDADE ---
+        # 1. Tenta encontrar Betclic
+        target_bookie = next((b for b in all_bookmakers if "Betclic" in b['name']), None)
+        
+        # 2. Se não houver Betclic, tenta Bet365
+        if not target_bookie:
+            target_bookie = next((b for b in all_bookmakers if "Bet365" in b['name']), None)
+            
+        # 3. Se não houver nenhum, usa o primeiro da lista (Ex: 1xBet, Bwin, etc.)
+        if not target_bookie:
+            target_bookie = all_bookmakers[0]
+
+        print(f"✅ Odds obtidas de: {target_bookie['name']}") # Para saberes qual foi usada
+        
+        bets = target_bookie['bets']
+        
+        # Extração de Odds (Igual ao anterior)
+        # 1. Mercado 1X2 (ID = 1)
+        match_winner = next((b for b in bets if b['id'] == 1), None)
+        odds_1x2 = {'h': 0, 'd': 0, 'a': 0}
+        
+        if match_winner:
+            vals = match_winner['values']
+            odds_1x2['h'] = next((v['odd'] for v in vals if v['value'] == 'Home'), 0)
+            odds_1x2['d'] = next((v['odd'] for v in vals if v['value'] == 'Draw'), 0)
+            odds_1x2['a'] = next((v['odd'] for v in vals if v['value'] == 'Away'), 0)
+
+        # 2. Hipótese Dupla (ID = 12)
+        double_chance = next((b for b in bets if b['id'] == 12), None)
+        odds_dc = {'1x': 0, '12': 0, 'x2': 0}
+
+        if double_chance:
+            vals_dc = double_chance['values']
+            odds_dc['1x'] = next((v['odd'] for v in vals_dc if v['value'] == 'Home/Draw'), 0)
+            odds_dc['12'] = next((v['odd'] for v in vals_dc if v['value'] == 'Home/Away'), 0)
+            odds_dc['x2'] = next((v['odd'] for v in vals_dc if v['value'] == 'Draw/Away'), 0)
+            
+        return jsonify({
+            'odd_h': odds_1x2['h'], 'odd_d': odds_1x2['d'], 'odd_a': odds_1x2['a'],
+            'odd_1x': odds_dc['1x'], 'odd_12': odds_dc['12'], 'odd_x2': odds_dc['x2']
+        })
+
+    except Exception as e:
+        print(f"Erro Odds: {e}")
+        return jsonify({"error": "Erro servidor"})
+
+
+# --- ROTA 3: PREVISÃO (PREDICT) ---
 @app.route('/api/predict', methods=['POST'])
 def predict():
     global model_multi, xgb_goals_h, xgb_goals_a, df_ready
@@ -136,9 +202,10 @@ def predict():
             odd_h = float(data.get('odd_h', 0))
             odd_d = float(data.get('odd_d', 0))
             odd_a = float(data.get('odd_a', 0))
-            odd_1x = float(data.get('odd_1x')) if data.get('odd_1x') else None
-            odd_12 = float(data.get('odd_12')) if data.get('odd_12') else None
-            odd_x2 = float(data.get('odd_x2')) if data.get('odd_x2') else None
+            # Tratamento seguro das Odds Duplas (podem vir vazias)
+            odd_1x = float(data.get('odd_1x')) if data.get('odd_1x') and data.get('odd_1x') != '' else None
+            odd_12 = float(data.get('odd_12')) if data.get('odd_12') and data.get('odd_12') != '' else None
+            odd_x2 = float(data.get('odd_x2')) if data.get('odd_x2') and data.get('odd_x2') != '' else None
         except: return jsonify({"error": "Odds inválidas"}), 400
 
         if odd_h > 0: input_data['Imp_Home'] = 1/odd_h
@@ -165,12 +232,12 @@ def predict():
                 if p > best_prob: best_prob = p; best_score = f"{h} - {a}"
 
         # 4. Scanner & Análise
-        opportunities = [] # Esta lista manterá a ordem de inserção
+        opportunities = [] 
 
         def add(name, odd, prob):
             if not odd or odd <= 1: return
             ev = (prob * odd) - 1
-            implied_prob = 1/odd # A percentagem que a casa espera
+            implied_prob = 1/odd
             
             if ev > 0.05: status = "💎 MUITO VALOR!"
             elif ev > 0: status = "✅ VALOR"
@@ -180,15 +247,15 @@ def predict():
             opportunities.append({
                 "name": name, 
                 "odd": odd, 
-                "odd_prob": f"{implied_prob:.1%}", # Ex: "45.5%"
+                "odd_prob": f"{implied_prob:.1%}", 
                 "prob_raw": prob,
-                "prob_txt": f"{prob:.1%}", # Ex: "42.3%"
+                "prob_txt": f"{prob:.1%}", 
                 "fair_odd": f"{1/prob:.2f}" if prob > 0 else "99",
                 "ev": ev,
                 "status": status
             })
 
-        # ORDEM FIXA PEDIDA: Casa -> Empate -> Fora -> 1X -> 12 -> X2
+        # ORDEM FIXA
         add(f"Vitoria {home}", odd_h, prob_h)
         add("Empate", odd_d, prob_d)
         add(f"Vitoria {away}", odd_a, prob_a)
@@ -198,7 +265,6 @@ def predict():
         if odd_12: add(f"DC 12 ({home} ou {away})", odd_12, prob_h + prob_a)
         if odd_x2: add(f"DC X2 ({away} ou Empate)", odd_x2, prob_a + prob_d)
 
-        # Para calcular o "Melhor", criamos uma cópia ordenada, mas NÃO mexemos na lista 'opportunities' principal
         sorted_by_ev = sorted(opportunities, key=lambda x: x['ev'], reverse=True)
         rational = sorted_by_ev[0] if sorted_by_ev else None
         
@@ -209,7 +275,7 @@ def predict():
             'home': home, 'away': away,
             'xg': {'home': f"{exp_h:.2f}", 'away': f"{exp_a:.2f}"},
             'score': {'placar': best_score, 'prob': f"{best_prob:.1%}"},
-            'scanner': opportunities, # Vai na ordem fixa
+            'scanner': opportunities,
             'rational': rational,
             'safe': safe
         })

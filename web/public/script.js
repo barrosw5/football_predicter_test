@@ -8,37 +8,97 @@ document.addEventListener('DOMContentLoaded', () => {
     const resultArea = document.getElementById('result-area');
     const dateHidden = document.getElementById('match-date-hidden');
     
-    // --- NOVOS ELEMENTOS (As caixas de texto das equipas) ---
-    // Certifica-te que no HTML tens: id="input-home" e id="input-away"
+    // Caixas de Texto das Equipas (ReadOnly)
     const homeInput = document.getElementById('input-home');
     const awayInput = document.getElementById('input-away');
+
+    // --- CAIXAS DAS ODDS ---
+    // Função auxiliar para encontrar o input pelo Name ou ID
+    const getInput = (name) => document.querySelector(`input[name="${name}"]`) || document.getElementById(name);
+
+    const inputH = getInput('odd_h');
+    const inputD = getInput('odd_d');
+    const inputA = getInput('odd_a');
+    const input1X = getInput('odd_1x');
+    const input12 = getInput('odd_12');
+    const inputX2 = getInput('odd_x2');
+
+    // Array com todos os inputs para facilitar limpar/preencher em loop
+    const allOddInputs = [inputH, inputD, inputA, input1X, input12, inputX2];
 
     // Define a data de hoje
     const today = new Date().toISOString().split('T')[0];
     dateInput.value = today;
     dateHidden.value = today;
 
-    // --- 1. PREENCHIMENTO AUTOMÁTICO DAS EQUIPAS ---
-    // Este evento dispara sempre que mudas o jogo no Dropdown
-    matchSelect.addEventListener('change', () => {
+    // --- FUNÇÃO AUXILIAR: FORMATAR ODDS (2 Casas Decimais) ---
+    const formatOdd = (val) => {
+        if (!val || val === 0 || val === "0" || val === "N/A") return "";
+        // Converte para float e fixa em 2 casas (ex: 1.5 -> "1.50")
+        return parseFloat(val).toFixed(2);
+    };
+
+    // --- 1. PREENCHIMENTO AUTOMÁTICO (EQUIPAS + ODDS) ---
+    matchSelect.addEventListener('change', async () => {
         const selectedValue = matchSelect.value;
         
         if (selectedValue) {
             try {
-                // Converte o texto do value de volta para Objeto
                 const matchData = JSON.parse(selectedValue);
                 
-                // Preenche as caixas readonly
+                // A. Preenche Nomes das Equipas
                 if(homeInput) homeInput.value = matchData.home_team || matchData.homeTeam;
                 if(awayInput) awayInput.value = matchData.away_team || matchData.awayTeam;
                 
+                // B. Feedback Visual: Coloca placeholder "A carregar..." e limpa valor
+                allOddInputs.forEach(el => { 
+                    if(el) { 
+                        el.value = ""; 
+                        el.placeholder = "A carregar..."; 
+                    } 
+                });
+
+                // C. Vai buscar as ODDS à API
+                if (matchData.id) {
+                    console.log(`📡 A pedir odds para o jogo ID: ${matchData.id}`);
+                    
+                    const res = await fetch(`${API_BASE}/api/odds`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ fixture_id: matchData.id })
+                    });
+                    
+                    const oddsData = await res.json();
+                    console.log("📦 Odds recebidas:", oddsData);
+                    
+                    if (oddsData.error) {
+                        console.warn("Aviso API:", oddsData.error);
+                        // Se der erro (ex: limite atingido), põe "N/A" no placeholder
+                        allOddInputs.forEach(el => { if(el) el.placeholder = "N/A"; });
+                    } else {
+                        // D. Preenche os valores com formatação (1.50)
+                        if(inputH) inputH.value = formatOdd(oddsData.odd_h);
+                        if(inputD) inputD.value = formatOdd(oddsData.odd_d);
+                        if(inputA) inputA.value = formatOdd(oddsData.odd_a);
+                        
+                        if(input1X) input1X.value = formatOdd(oddsData.odd_1x);
+                        if(input12) input12.value = formatOdd(oddsData.odd_12);
+                        if(inputX2) inputX2.value = formatOdd(oddsData.odd_x2);
+                        
+                        // Restaura o placeholder normal
+                        allOddInputs.forEach(el => el.placeholder = "1.00");
+                    }
+                }
+                
             } catch (e) {
-                console.error("Erro ao processar dados do jogo:", e);
+                console.error("Erro ao processar dados:", e);
+                allOddInputs.forEach(el => el.placeholder = "Erro");
             }
         } else {
-            // Se selecionar a opção padrão, limpa as caixas
+            // Limpa tudo se desmarcar o jogo
             if(homeInput) homeInput.value = "";
             if(awayInput) awayInput.value = "";
+            allOddInputs.forEach(el => { if(el) { el.value = ""; el.placeholder = "1.00"; } });
         }
     });
 
@@ -47,7 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
         matchSelect.disabled = true;
         matchSelect.innerHTML = '<option>⏳ A carregar jogos...</option>';
         
-        // Limpar inputs enquanto carrega
+        // Limpar inputs de equipas
         if(homeInput) homeInput.value = "";
         if(awayInput) awayInput.value = "";
 
@@ -62,7 +122,7 @@ document.addEventListener('DOMContentLoaded', () => {
             matchSelect.innerHTML = '<option value="">-- Seleciona um Jogo --</option>';
 
             if (matches.length === 0) {
-                matchSelect.innerHTML = '<option value="">⚠️ Sem jogos compatíveis hoje</option>';
+                matchSelect.innerHTML = '<option value="">⚠️ Sem jogos suportados hoje</option>';
             } else {
                 const groups = {};
                 // Agrupar por Liga
@@ -72,20 +132,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     groups[league].push(m);
                 });
 
-                // Criar o Dropdown com Optgroups
                 for (const [leagueName, games] of Object.entries(groups)) {
                     const group = document.createElement('optgroup');
                     group.label = leagueName;
                     games.forEach(m => {
                         const opt = document.createElement('option');
-                        // Guardamos todo o objeto do jogo no value para usar depois
                         opt.value = JSON.stringify(m);
-                        
+                        const statusIcon = (m.status_short === 'FT') ? '🏁' : '⏰';
                         const home = m.home_team || m.homeTeam;
                         const away = m.away_team || m.awayTeam;
-                        // Ícone muda se o jogo já tiver terminado (FT) ou estiver a decorrer
-                        const statusIcon = (m.status_short === 'FT') ? '🏁' : '⏰';
-                        
                         opt.textContent = `${m.match_time} ${statusIcon} ${home} vs ${away}`;
                         group.appendChild(opt);
                     });
@@ -106,25 +161,26 @@ document.addEventListener('DOMContentLoaded', () => {
         fetchFixtures(e.target.value);
     });
 
-    // --- 3. GERAR PREVISÃO (SUBMIT) ---
+    // --- 3. SUBMETER PREVISÃO ---
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
-        if (!matchSelect.value) return alert("Por favor, seleciona um jogo da lista!");
+        if (!matchSelect.value) return alert("Seleciona um jogo!");
 
         const mData = JSON.parse(matchSelect.value);
-        const formData = new FormData(form);
-
+        
+        // Usamos os valores diretos dos inputs (inputH.value)
+        // Isto permite que a previsão funcione mesmo que tenhas escrito as odds à mão
         const payload = {
             date: dateHidden.value,
             home_team: mData.home_team || mData.homeTeam,
             away_team: mData.away_team || mData.awayTeam,
             division: mData.division || 'E0',
-            odd_h: formData.get('odd_h'), 
-            odd_d: formData.get('odd_d'), 
-            odd_a: formData.get('odd_a'),
-            odd_1x: formData.get('odd_1x'), 
-            odd_12: formData.get('odd_12'), 
-            odd_x2: formData.get('odd_x2')
+            odd_h: inputH ? inputH.value : 0, 
+            odd_d: inputD ? inputD.value : 0, 
+            odd_a: inputA ? inputA.value : 0,
+            odd_1x: input1X ? input1X.value : 0, 
+            odd_12: input12 ? input12.value : 0, 
+            odd_x2: inputX2 ? inputX2.value : 0
         };
 
         resultArea.innerHTML = '<div class="loading">🔮 A consultar os astros do futebol...</div>';
@@ -139,96 +195,43 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             if (data.error) throw new Error(data.error);
 
+            // --- RENDER HTML ---
             const formatEV = (val) => (val * 100).toFixed(1) + "%";
 
-            // --- CONSTRUÇÃO DO SCANNER HTML ---
             let scannerHTML = data.scanner.map(s => {
-                let badgeClass = "badge-bad";
-                let icon = "";
-                
-                if (s.status.includes('MUITO')) { badgeClass = "badge-gem"; icon = "💎 "; }
-                else if (s.status.includes('VALOR')) { badgeClass = "badge-good"; icon = "✅ "; }
-                else if (s.status.includes('JUSTO')) { badgeClass = "badge-fair"; icon = "😐 "; }
-                else { badgeClass = "badge-bad"; icon = "❌ "; }
+                let badgeClass = s.status.includes('MUITO') ? "badge-gem" : 
+                                 s.status.includes('VALOR') ? "badge-good" : 
+                                 s.status.includes('JUSTO') ? "badge-fair" : "badge-bad";
+                let icon = s.status.includes('MUITO') ? "💎 " : 
+                           s.status.includes('VALOR') ? "✅ " : 
+                           s.status.includes('JUSTO') ? "😐 " : "❌ ";
 
-                return `
-                <div class="scanner-item">
+                return `<div class="scanner-item">
                     <div class="market-name">${s.name}</div>
-                    
-                    <div class="data-col">
-                        <span class="data-val">@${s.odd.toFixed(2)}</span>
-                        <span class="data-perc">Casa: ${s.odd_prob}</span>
-                    </div>
-                    
-                    <div class="data-col">
-                        <span class="data-val" style="color:var(--primary)">@${s.fair_odd}</span>
-                        <span class="data-perc">IA: ${s.prob_txt}</span>
-                    </div>
-                    
+                    <div class="data-col"><span class="data-val">@${s.odd.toFixed(2)}</span></div>
+                    <div class="data-col"><span class="data-val" style="color:var(--primary)">@${s.fair_odd}</span></div>
                     <div class="status-badge ${badgeClass}">${icon}${s.status.replace(/.* /, '')}</div>
                 </div>`;
             }).join('');
 
-            // Paineis de Resumo (Racional e Seguro)
             let rationalHTML = data.rational ? `
                 <div style="background: rgba(16, 185, 129, 0.1); padding: 15px; border-left: 4px solid #10b981; margin-bottom: 10px; border-radius: 4px;">
-                    <h4 style="margin:0 0 5px 0; color: #10b981; font-size: 0.9rem; text-transform: uppercase;">🏆 Escolha Racional (EV Máximo)</h4>
-                    <div style="font-size: 1.2rem; font-weight: bold; margin-bottom: 4px;">👉 ${data.rational.name}</div>
-                    <div style="font-size: 0.9rem; color: #cbd5e1;">
-                        Odd: <span style="color:#fff; font-weight:bold;">${data.rational.odd.toFixed(2)}</span> | 
-                        EV: <span style="color:#10b981; font-weight:bold;">+${formatEV(data.rational.ev)}</span>
-                    </div>
+                    <h4 style="margin:0; color: #10b981;">🏆 Racional: ${data.rational.name}</h4>
+                    <div>EV: +${formatEV(data.rational.ev)}</div>
                 </div>` : '';
-
+            
             let safeHTML = data.safe ? `
                 <div style="background: rgba(59, 130, 246, 0.1); padding: 15px; border-left: 4px solid #3b82f6; border-radius: 4px;">
-                    <h4 style="margin:0 0 5px 0; color: #3b82f6; font-size: 0.9rem; text-transform: uppercase;">🛡️ Escolha Segura (Probabilidade)</h4>
-                    <div style="font-size: 1.2rem; font-weight: bold; margin-bottom: 4px;">👉 ${data.safe.name}</div>
-                    <div style="font-size: 0.9rem; color: #cbd5e1;">
-                        Confiança: <span style="color:#fff; font-weight:bold;">${data.safe.prob_txt}</span>
-                    </div>
-                    ${data.safe.ev < 0 ? '<div style="color: #f59e0b; font-size: 0.8rem; margin-top:5px;">⚠️ Odd baixa (EV Negativo). Cuidado.</div>' : ''}
+                    <h4 style="margin:0; color: #3b82f6;">🛡️ Seguro: ${data.safe.name}</h4>
+                    <div>Confiança: ${data.safe.prob_txt}</div>
                 </div>` : '';
 
-            // RENDER FINAL NA PÁGINA
             resultArea.innerHTML = `
-                <h3 style="border-bottom: 1px solid #334155; padding-bottom: 15px; margin-bottom: 20px;">
-                    <i class="fa-solid fa-futbol"></i> ${data.home} <span style="color:#64748b">vs</span> ${data.away}
-                </h3>
-                
-                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px; margin-bottom: 25px;">
-                    <div class="stat-item">
-                        <span style="color:#94a3b8; font-size:0.8rem;">Expected Goals (xG)</span>
-                        <div style="margin-top:5px;">
-                            <div style="display:flex; justify-content:space-between; margin-bottom:2px;">
-                                <span>${data.home}</span> <strong>${data.xg.home}</strong>
-                            </div>
-                            <div style="display:flex; justify-content:space-between;">
-                                <span>${data.away}</span> <strong>${data.xg.away}</strong>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="stat-item" style="justify-content:center;">
-                        <span style="color:#94a3b8; font-size:0.8rem;">Placar Provável</span>
-                        <strong style="font-size:1.4rem; color:var(--primary);">${data.score.placar}</strong>
-                        <small>(${data.score.prob})</small>
-                    </div>
-                </div>
-
-                <div class="scanner-container">
-                    <div class="scanner-header">
-                        <div>Mercado</div>
-                        <div>Bookie (Impl.)</div>
-                        <div>IA (Real)</div>
-                        <div style="text-align:center;">Valor</div>
-                    </div>
-                    ${scannerHTML}
-                </div>
-                
-                <div style="margin-top: 25px;">
-                    ${rationalHTML}
-                    ${safeHTML}
-                </div>
+                <h3>${data.home} vs ${data.away}</h3>
+                <div style="text-align:center; font-size:1.5em; margin:10px 0;">${data.score.placar}</div>
+                <div class="scanner-container">${scannerHTML}</div>
+                ${rationalHTML}
+                ${safeHTML}
             `;
 
         } catch (err) {

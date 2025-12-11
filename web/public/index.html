@@ -3,92 +3,87 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Football Predictor Pro</title>
+    <title>Football AI Predictor</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
 </head>
 <body>
-    <div class="app-wrapper">
-        <header>
-            <div class="logo-area">
-                <i class="fa-solid fa-robot fa-2x"></i>
-                <h1>Neural<span class="highlight">Bet</span></h1>
-            </div>
-            <p class="status-indicator">Sistema: <span id="sys-status" class="status-dot">●</span> Online</p>
-        </header>
 
-        <main>
-            <div class="card control-panel">
-                <h2><i class="fa-regular fa-calendar-check"></i> Seleção de Jogo</h2>
+<div class="container">
+    <header>
+        <h1><i class="fa-solid fa-robot"></i> AI Football Brain</h1>
+        <p>Previsões baseadas em Machine Learning</p>
+    </header>
+
+    <div class="card">
+        <div class="control-group">
+            <label><i class="fa-regular fa-calendar"></i> Data do Jogo</label>
+            <input type="date" id="match-date">
+            <input type="hidden" id="match-date-hidden">
+        </div>
+
+        <div class="control-group">
+            <label><i class="fa-solid fa-list"></i> Selecionar Jogo (Lista da API)</label>
+            <select id="quick-match">
+                <option value="">A aguardar data...</option>
+            </select>
+        </div>
+
+        <form id="prediction-form">
+            
+            <div class="teams-display">
+                <div class="team-input-group">
+                    <label>Casa</label>
+                    <input type="text" id="input-home" name="home_team" placeholder="Equipa Casa" readonly>
+                </div>
+                <span class="vs">VS</span>
+                <div class="team-input-group">
+                    <label>Fora</label>
+                    <input type="text" id="input-away" name="away_team" placeholder="Equipa Fora" readonly>
+                </div>
+            </div>
+
+            <hr class="divider">
+
+            <h4 class="section-title"><i class="fa-solid fa-chart-line"></i> Odds da Casa de Apostas</h4>
+            
+            <div class="odds-grid">
+                <div class="odd-group">
+                    <label>Casa (1)</label>
+                    <input type="number" step="0.01" id="odd_h" name="odd_h" placeholder="1.00">
+                </div>
+                <div class="odd-group">
+                    <label>Empate (X)</label>
+                    <input type="number" step="0.01" id="odd_d" name="odd_d" placeholder="1.00">
+                </div>
+                <div class="odd-group">
+                    <label>Fora (2)</label>
+                    <input type="number" step="0.01" id="odd_a" name="odd_a" placeholder="1.00">
+                </div>
                 
-                <div class="row">
-                    <div class="input-group">
-                        <label>Data do Evento</label>
-                        <input type="date" id="match-date" class="modern-input">
-                    </div>
-                    <div class="input-group grow-2">
-                        <label>Jogos Disponíveis (API)</label>
-                        <select id="quick-match" class="modern-select" disabled>
-                            <option value="">Aguardar data...</option>
-                        </select>
-                    </div>
+                <div class="odd-group">
+                    <label>1X</label>
+                    <input type="number" step="0.01" id="odd_1x" name="odd_1x" placeholder="1.00">
+                </div>
+                <div class="odd-group">
+                    <label>12</label>
+                    <input type="number" step="0.01" id="odd_12" name="odd_12" placeholder="1.00">
+                </div>
+                <div class="odd-group">
+                    <label>X2</label>
+                    <input type="number" step="0.01" id="odd_x2" name="odd_x2" placeholder="1.00">
                 </div>
             </div>
 
-            <form id="prediction-form" class="card fade-in">
-                <div class="teams-display">
-                    <div class="team-input">
-                        <label>Equipa Casa</label>
-                        <input type="text" name="home_team" id="input-home" placeholder="Equipa da Casa" readonly>
-                    </div>
-                    <div class="vs-badge">VS</div>
-                    <div class="team-input">
-                        <label>Equipa Fora</label>
-                        <input type="text" name="away_team" id="input-away" placeholder="Equipa de Fora" readonly>
-                    </div>
-                </div>
-
-                <div class="odds-panel">
-                    <div class="odd-box">
-                        <label>1 (Casa)</label>
-                        <input type="number" step="0.01" id="odd_h" name="odd_h" placeholder="1.00" required>
-                    </div>
-                    <div class="odd-box">
-                        <label>X (Empate)</label>
-                        <input type="number" step="0.01" id="odd_d" name="odd_d" placeholder="1.00" required>
-                    </div>
-                    <div class="odd-box">
-                        <label>2 (Fora)</label>
-                        <input type="number" step="0.01" id="odd_a" name="odd_a" placeholder="1.00" required>
-                    </div>
-
-                    <div class="odd-box secondary">
-                        <label>DC 1X</label>
-                        <input type="number" step="0.01" id="odd_1x" name="odd_1x" placeholder="Opt">
-                    </div>
-                    <div class="odd-box secondary">
-                        <label>DC 12</label>
-                        <input type="number" step="0.01" id="odd_12" name="odd_12" placeholder="Opt">
-                    </div>
-                    <div class="odd-box secondary">
-                        <label>DC X2</label>
-                        <input type="number" step="0.01" id="odd_x2" name="odd_x2" placeholder="Opt">
-                    </div>
-                    
-                    <input type="hidden" id="division" name="division" value="E0">
-                    <input type="hidden" id="match-date-hidden" name="date">
-                </div>
-
-                <button type="submit" class="btn-predict">
-                    <span>Gerar Análise IA</span>
-                    <i class="fa-solid fa-wand-magic-sparkles"></i>
-                </button>
-            </form>
-
-            <div id="result-area" class="result-wrapper"></div>
-        </main>
+            <button type="submit" class="btn-predict">
+                <i class="fa-solid fa-wand-magic-sparkles"></i> Analisar Jogo
+            </button>
+        </form>
     </div>
-    <script src="script.js"></script>
+
+    <div id="result-area" class="result-container"></div>
+</div>
+
+<script src="script.js"></script>
 </body>
 </html>
