@@ -261,8 +261,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="matrix-container-wrapper">
                         <div class="matrix-axis-y">🏠 ${data.home}</div>
                         <div style="flex:1">
-                            <div class="matrix-axis-x">✈️ ${data.away}</div>
                             ${generateMatrixHTML(data.matrix)}
+                            <div class="matrix-axis-x" style="margin-top: 5px; margin-bottom: 0;">✈️ ${data.away}</div>
                         </div>
                     </div>
                 </div>
