@@ -9,6 +9,7 @@ from scipy.stats import poisson
 import traceback
 
 app = Flask(__name__)
+# Permite CORS para qualquer origem durante desenvolvimento
 CORS(app)
 
 API_KEY = "81f8d50f4cac1f4ac373794f18440676" 
