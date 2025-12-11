@@ -1,5 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const API_BASE = "http://127.0.0.1:5000";
+    // MUDANÇA IMPORTANTE: Deixa vazio para usar o domínio atual (Render ou Localhost) auto-detectado
+    const API_BASE = ""; 
     
     // Elementos do DOM
     const dateInput = document.getElementById('match-date');
@@ -108,7 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
             matchSelect.innerHTML = '<option value="">-- Seleciona um Jogo --</option>';
 
             if (matches.length === 0) {
-                matchSelect.innerHTML = '<option value="">⚠️ Sem jogos suportados hoje</option>';
+                matchSelect.innerHTML = '<option value="">⚠️ Sem jogos disponíveis</option>';
             } else {
                 const groups = {};
                 matches.forEach(m => {
@@ -178,22 +179,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 let html = '<div class="score-matrix">';
                 
                 // Cabeçalho (Golos Fora)
-                html += '<div class="matrix-header"></div>'; // Canto vazio
+                html += '<div class="matrix-header"></div>'; 
                 for(let a=0; a<6; a++) html += `<div class="matrix-header">${a}</div>`;
                 
                 // Linhas (Golos Casa)
                 for(let h=0; h<6; h++) {
-                    html += `<div class="matrix-row-label">${h}</div>`; // Label Casa
+                    html += `<div class="matrix-row-label">${h}</div>`;
                     for(let a=0; a<6; a++) {
                         const prob = matrix[h][a];
                         const perc = (prob * 100).toFixed(1);
                         
-                        // Cores do Heatmap
                         let bgClass = "bg-low";
                         if(prob > 0.15) bgClass = "bg-high";
                         else if(prob > 0.08) bgClass = "bg-med";
                         
-                        // Destacar o resultado mais provável
                         const maxVal = Math.max(...matrix.flat());
                         const isBest = prob === maxVal;
                         const borderClass = isBest ? "matrix-best" : "";
@@ -209,7 +208,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const formatEV = (val) => (val * 100).toFixed(1) + "%";
 
-            // Scanner
             let scannerHTML = data.scanner.map(s => {
                 let badgeClass = s.status.includes('MUITO') ? "badge-gem" : 
                                  s.status.includes('VALOR') ? "badge-good" : 
@@ -226,7 +224,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>`;
             }).join('');
 
-            // --- NOVO LAYOUT DO RESULTADO ---
             resultArea.innerHTML = `
                 <h3>${data.home} <span style="color:#64748b; font-size:0.8em">vs</span> ${data.away}</h3>
                 
