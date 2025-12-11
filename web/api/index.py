@@ -10,21 +10,23 @@ import traceback
 
 # --- CONFIGURAÇÃO PARA DEPLOY (RENDER) ---
 # Define que a pasta de ficheiros estáticos (HTML, CSS, JS) está em '../public'
-# Isto permite que o Render encontre o teu site
 app = Flask(__name__, static_folder='../public', static_url_path='')
 CORS(app)
 
-# Tenta ler a chave das Variáveis de Ambiente (Segurança no Render)
-# Se não encontrar (ex: a rodar no teu PC), usa a chave fixa como segurança
-API_KEY = os.getenv("API_KEY", "81f8d50f4cac1f4ac373794f18440676") 
+# --- SEGURANÇA: API KEY ---
+# Busca a chave às variáveis de ambiente do sistema.
+# Se não estiver definida (ex: no Render sem configuração), devolve None.
+API_KEY = os.getenv("API_KEY")
 
-# Mapeamento de Ligas (Inclui agora Europa League e Conference League como 'CL')
+if not API_KEY:
+    print("⚠️ AVISO: A API Key não foi detetada nas variáveis de ambiente!")
+
+# Mapeamento de Ligas
 LEAGUE_MAP = {
     39: 'E0', 78: 'D1', 140: 'SP1', 61: 'F1', 135: 'I1',
     40: 'E1', 79: 'D2', 141: 'SP2', 62: 'F2', 136: 'I2',
     94: 'P1', 88: 'N1', 144: 'B1', 203: 'T1', 197: 'G1', 179: 'SC0',
     2: 'CL',
-    # --- NOVAS LIGAS EUROPEIAS ---
     3: 'CL',   # Liga Europa
     848: 'CL'  # Liga Conferência
 }
@@ -56,7 +58,6 @@ else:
 
 
 # --- NOVA ROTA: SERVIR O SITE (Frontend) ---
-# Isto resolve o erro "Not Found" no Render
 @app.route('/')
 def serve_index():
     return send_from_directory(app.static_folder, 'index.html')
@@ -69,19 +70,24 @@ def get_fixtures():
         data = request.get_json()
         url = "https://v3.football.api-sports.io/fixtures"
         
-        # Pede todos os jogos do dia (sem filtrar status)
         params = {'date': data.get('date')}
+        # Usa a chave carregada do ambiente
         headers = {'x-rapidapi-key': API_KEY, 'x-rapidapi-host': "v3.football.api-sports.io"}
 
         print(f"📡 A pedir jogos à API para data: {data.get('date')}...")
         response = requests.get(url, headers=headers, params=params)
         
+        # DEBUG: Verifica erros da API
+        resp_json = response.json()
+        if 'errors' in resp_json and resp_json['errors']:
+            print(f"❌ ERRO DA API: {resp_json['errors']}")
+            # Não retornamos logo erro para não quebrar o frontend, mas fica registado
+        
         if response.status_code != 200:
             print(f"❌ Erro API Status: {response.status_code}")
             return jsonify([])
 
-        fixtures_data = response.json().get('response', [])
-        total_games = len(fixtures_data)
+        fixtures_data = resp_json.get('response', [])
         supported_matches = []
 
         for f in fixtures_data:
@@ -90,7 +96,7 @@ def get_fixtures():
             
             if lid in LEAGUE_MAP:
                 supported_matches.append({
-                    'id': f['fixture']['id'], # IMPORTANTE: ID necessário para buscar odds
+                    'id': f['fixture']['id'], 
                     'home_team': f['teams']['home']['name'],
                     'away_team': f['teams']['away']['name'],
                     'division': LEAGUE_MAP[lid],
@@ -104,7 +110,7 @@ def get_fixtures():
 
         supported_matches.sort(key=lambda x: (x['league_name'], x['match_time']))
         
-        print(f"✅ Jogos: {total_games} recebidos -> {len(supported_matches)} suportados.")
+        print(f"✅ Jogos: {len(fixtures_data)} recebidos -> {len(supported_matches)} suportados.")
         return jsonify(supported_matches)
 
     except Exception as e:
@@ -113,14 +119,13 @@ def get_fixtures():
         return jsonify([])
 
 
-# --- ROTA 2: BUSCAR ODDS (Prioridade: Betclic -> Bet365 -> Qualquer) ---
+# --- ROTA 2: BUSCAR ODDS ---
 @app.route('/api/odds', methods=['POST'])
 def get_odds():
     try:
         data = request.get_json()
         fid = data.get('fixture_id')
         
-        # Não definimos 'bookmaker' no pedido para recebermos a lista de todos
         url = "https://v3.football.api-sports.io/odds"
         params = {'fixture': fid} 
         headers = {'x-rapidapi-key': API_KEY, 'x-rapidapi-host': "v3.football.api-sports.io"}
@@ -134,15 +139,10 @@ def get_odds():
         all_bookmakers = resp_json['response'][0]['bookmakers']
         if not all_bookmakers: return jsonify({"error": "Sem bookies"})
         
-        # --- LÓGICA DE PRIORIDADE ---
-        # 1. Tenta encontrar Betclic
+        # Prioridade: Betclic -> Bet365 -> Primeiro
         target_bookie = next((b for b in all_bookmakers if "Betclic" in b['name']), None)
-        
-        # 2. Se não houver Betclic, tenta Bet365
         if not target_bookie:
             target_bookie = next((b for b in all_bookmakers if "Bet365" in b['name']), None)
-            
-        # 3. Se não houver nenhum, usa o primeiro da lista
         if not target_bookie:
             target_bookie = all_bookmakers[0]
 
@@ -150,7 +150,6 @@ def get_odds():
         
         bets = target_bookie['bets']
         
-        # 1. Mercado 1X2 (ID = 1)
         match_winner = next((b for b in bets if b['id'] == 1), None)
         odds_1x2 = {'h': 0, 'd': 0, 'a': 0}
         
@@ -160,7 +159,6 @@ def get_odds():
             odds_1x2['d'] = next((v['odd'] for v in vals if v['value'] == 'Draw'), 0)
             odds_1x2['a'] = next((v['odd'] for v in vals if v['value'] == 'Away'), 0)
 
-        # 2. Hipótese Dupla (ID = 12)
         double_chance = next((b for b in bets if b['id'] == 12), None)
         odds_dc = {'1x': 0, '12': 0, 'x2': 0}
 
@@ -180,7 +178,7 @@ def get_odds():
         return jsonify({"error": "Erro servidor"})
 
 
-# --- ROTA 3: PREVISÃO (PREDICT) ---
+# --- ROTA 3: PREVISÃO ---
 @app.route('/api/predict', methods=['POST'])
 def predict():
     global model_multi, xgb_goals_h, xgb_goals_a, df_ready
@@ -189,23 +187,19 @@ def predict():
         if model_multi is None: return jsonify({"error": "Modelos offline"}), 500
         data = request.get_json()
         
-        # 1. Dados Básicos
         home, away = data.get('home_team'), data.get('away_team')
         div = data.get('division', 'E0')
         date_str = data.get('date')
         
-        # 2. Features (Lógica Last 5 com Correção de Erros)
         input_data = {}
         
-        # Função auxiliar para ir buscar os stats mais recentes da equipa
+        # Função auxiliar para ir buscar os stats mais recentes
         def get_latest_stats(team_name):
-            # Se não houver coluna Team, devolve médias seguras
             if 'Team' not in df_ready.columns: 
                 return {f: df_ready[f].mean() if f in df_ready.columns else 0 for f in features}
             
             team_history = df_ready[df_ready['Team'] == team_name]
             
-            # Se a equipa não tiver histórico, devolve médias seguras
             if team_history.empty: 
                 return {f: df_ready[f].mean() if f in df_ready.columns else 0 for f in features}
             
@@ -218,7 +212,6 @@ def predict():
             if f in home_stats: 
                 input_data[f] = home_stats[f]
             else:
-                # Fallback seguro: se a coluna existir, usa a média. Se não, usa 0.
                 input_data[f] = df_ready[f].mean() if not df_ready.empty and f in df_ready else 0
 
         # ELO Ratings
@@ -246,7 +239,7 @@ def predict():
         try: input_data['Div_Code'] = le_div.transform([div])[0]
         except: input_data['Div_Code'] = 0
 
-        # 3. Previsão do Modelo
+        # Previsão
         X = pd.DataFrame([input_data])[features]
         exp_h = float(xgb_goals_h.predict(X)[0])
         exp_a = float(xgb_goals_a.predict(X)[0])
@@ -256,7 +249,7 @@ def predict():
         try: conf_shield = float(model_shield.predict_proba(X)[0][1])
         except: conf_shield = prob_h + prob_d
 
-        # --- GERAÇÃO DA MATRIZ DE POISSON (0-5 golos) ---
+        # Matriz de Poisson
         score_matrix = []
         best_score, best_prob = "0-0", -1
         
@@ -265,34 +258,25 @@ def predict():
             for a in range(6):
                 p = poisson.pmf(h, exp_h) * poisson.pmf(a, exp_a)
                 row.append(p)
-                
                 if p > best_prob: 
-                    best_prob = p
-                    best_score = f"{h} - {a}"
+                    best_prob = p; best_score = f"{h} - {a}"
             score_matrix.append(row)
 
-        # 4. Scanner & Análise
+        # Scanner
         opportunities = [] 
-
         def add(name, odd, prob):
             if not odd or odd <= 1: return
             ev = (prob * odd) - 1
             implied_prob = 1/odd
-            
             if ev > 0.05: status = "💎 MUITO VALOR!"
             elif ev > 0: status = "✅ VALOR"
             elif ev > -0.05: status = "😐 JUSTO"
             else: status = "❌ FRACO"
             
             opportunities.append({
-                "name": name, 
-                "odd": odd, 
-                "odd_prob": f"{implied_prob:.1%}", 
-                "prob_raw": prob,
-                "prob_txt": f"{prob:.1%}", 
-                "fair_odd": f"{1/prob:.2f}" if prob > 0 else "99",
-                "ev": ev,
-                "status": status
+                "name": name, "odd": odd, "odd_prob": f"{implied_prob:.1%}", 
+                "prob_raw": prob, "prob_txt": f"{prob:.1%}", 
+                "fair_odd": f"{1/prob:.2f}" if prob > 0 else "99", "ev": ev, "status": status
             })
 
         add(f"Vitoria {home}", odd_h, prob_h)
@@ -306,7 +290,6 @@ def predict():
 
         sorted_by_ev = sorted(opportunities, key=lambda x: x['ev'], reverse=True)
         rational = sorted_by_ev[0] if sorted_by_ev else None
-        
         safe_list = sorted(opportunities, key=lambda x: x['prob_raw'], reverse=True)
         safe = safe_list[0] if safe_list else None
 
