@@ -68,7 +68,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         console.warn("Aviso API:", oddsData.error);
                         allOddInputs.forEach(el => { if(el) el.placeholder = "N/A"; });
                     } else {
-                        // APLICA A FORMATAÇÃO AQUI
                         if(inputH) inputH.value = formatOdd(oddsData.odd_h);
                         if(inputD) inputD.value = formatOdd(oddsData.odd_d);
                         if(inputA) inputA.value = formatOdd(oddsData.odd_a);
@@ -86,7 +85,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 allOddInputs.forEach(el => el.placeholder = "Erro");
             }
         } else {
-            // Limpar
             if(homeInput) homeInput.value = "";
             if(awayInput) awayInput.value = "";
             allOddInputs.forEach(el => { if(el) { el.value = ""; el.placeholder = "1.00"; } });
@@ -175,10 +173,43 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             if (data.error) throw new Error(data.error);
 
-            // RENDER HTML
+            // FUNÇÃO PARA GERAR A MATRIZ DE RESULTADOS (Heatmap)
+            const generateMatrixHTML = (matrix) => {
+                let html = '<div class="score-matrix">';
+                
+                // Cabeçalho (Golos Fora)
+                html += '<div class="matrix-header"></div>'; // Canto vazio
+                for(let a=0; a<6; a++) html += `<div class="matrix-header">${a}</div>`;
+                
+                // Linhas (Golos Casa)
+                for(let h=0; h<6; h++) {
+                    html += `<div class="matrix-row-label">${h}</div>`; // Label Casa
+                    for(let a=0; a<6; a++) {
+                        const prob = matrix[h][a];
+                        const perc = (prob * 100).toFixed(1);
+                        
+                        // Cores do Heatmap
+                        let bgClass = "bg-low";
+                        if(prob > 0.15) bgClass = "bg-high";
+                        else if(prob > 0.08) bgClass = "bg-med";
+                        
+                        // Destacar o resultado mais provável
+                        const maxVal = Math.max(...matrix.flat());
+                        const isBest = prob === maxVal;
+                        const borderClass = isBest ? "matrix-best" : "";
+
+                        html += `<div class="matrix-cell ${bgClass} ${borderClass}" title="Casa ${h} - ${a} Fora">
+                                    ${perc}%
+                                 </div>`;
+                    }
+                }
+                html += '</div>';
+                return html;
+            };
+
             const formatEV = (val) => (val * 100).toFixed(1) + "%";
 
-            // GERAÇÃO DO SCANNER COM NOVO LAYOUT
+            // Scanner
             let scannerHTML = data.scanner.map(s => {
                 let badgeClass = s.status.includes('MUITO') ? "badge-gem" : 
                                  s.status.includes('VALOR') ? "badge-good" : 
@@ -187,30 +218,45 @@ document.addEventListener('DOMContentLoaded', () => {
                            s.status.includes('VALOR') ? "✅ " : 
                            s.status.includes('JUSTO') ? "😐 " : "❌ ";
 
-                // AQUI ESTÁ A MUDANÇA VISUAL PEDIDA:
                 return `<div class="scanner-item">
                     <div class="market-name">${s.name}</div>
-                    
-                    <div class="data-col">
-                        <span style="font-weight:bold;">@${s.odd.toFixed(2)}</span>
-                        <span style="font-size:0.85em; color:#94a3b8; margin-left:4px;">(${s.odd_prob})</span>
-                    </div>
-                    
-                    <div class="data-col">
-                        <span style="font-weight:bold; color:var(--primary)">@${s.fair_odd}</span>
-                        <span style="font-size:0.85em; color:#94a3b8; margin-left:4px;">(${s.prob_txt})</span>
-                    </div>
-                    
+                    <div class="data-col"><span style="font-weight:bold;">@${s.odd.toFixed(2)}</span><span style="font-size:0.85em; color:#94a3b8;">(${s.odd_prob})</span></div>
+                    <div class="data-col"><span style="font-weight:bold; color:var(--primary)">@${s.fair_odd}</span><span style="font-size:0.85em; color:#94a3b8;">(${s.prob_txt})</span></div>
                     <div class="status-badge ${badgeClass}">${icon}${s.status.replace(/.* /, '')}</div>
                 </div>`;
             }).join('');
 
-            // CABEÇALHO ATUALIZADO
+            // --- NOVO LAYOUT DO RESULTADO ---
             resultArea.innerHTML = `
-                <h3>${data.home} vs ${data.away}</h3>
-                <div style="text-align:center; font-size:1.5em; margin:10px 0;">${data.score.placar}</div>
+                <h3>${data.home} <span style="color:#64748b; font-size:0.8em">vs</span> ${data.away}</h3>
                 
-                <div class="scanner-container">
+                <div class="xg-stats-box">
+                    <div class="xg-title">📊 EXPECTED GOALS (IA)</div>
+                    <div class="xg-content">
+                        <div class="xg-item">
+                            ⚽ ${data.home}: <strong style="color:var(--primary)">${data.xg.home}</strong> golos
+                        </div>
+                        <div class="xg-item">
+                            ⚽ ${data.away}: <strong style="color:var(--primary)">${data.xg.away}</strong> golos
+                        </div>
+                        <div class="xg-item highlight-score">
+                            🎯 Placar Mais Provável: <strong>${data.score.placar}</strong> (${data.score.prob})
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-top: 20px;">
+                    <h4 style="margin-bottom:10px; color:var(--text-muted); font-size:0.9rem; text-align:center;">Matriz de Probabilidades (Resultado Exato)</h4>
+                    <div class="matrix-container-wrapper">
+                        <div class="matrix-axis-y">🏠 Casa</div>
+                        <div style="flex:1">
+                            <div class="matrix-axis-x">✈️ Fora</div>
+                            ${generateMatrixHTML(data.matrix)}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="scanner-container" style="margin-top:25px;">
                     <div class="scanner-header">
                         <div>Mercado</div>
                         <div style="text-align:center;">Casa de Apostas</div>

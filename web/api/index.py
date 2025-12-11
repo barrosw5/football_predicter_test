@@ -168,7 +168,7 @@ def get_odds():
         return jsonify({"error": "Erro servidor"})
 
 
-# --- ROTA 3: PREVISÃO (COM LÓGICA "LAST 5") ---
+# --- ROTA 3: PREVISÃO (PREDICT) ---
 @app.route('/api/predict', methods=['POST'])
 def predict():
     global model_multi, xgb_goals_h, xgb_goals_a, df_ready
@@ -182,62 +182,34 @@ def predict():
         div = data.get('division', 'E0')
         date_str = data.get('date')
         
-        # --- 2. PREENCHIMENTO DE FEATURES INTELIGENTE (Last 5 Logic) ---
+        # 2. Features (Lógica Last 5 com Correção de Erros)
         input_data = {}
         
-        # Garante que o histórico está ordenado por data para pegar o último jogo
-        if 'Date' in df_ready.columns:
-            history = df_ready.sort_values('Date')
-        else:
-            history = df_ready
+        # Função auxiliar para ir buscar os stats mais recentes da equipa
+        def get_latest_stats(team_name):
+            # Se não houver coluna Team, devolve médias seguras (verifica se a coluna existe antes de pedir média)
+            if 'Team' not in df_ready.columns: 
+                return {f: df_ready[f].mean() if f in df_ready.columns else 0 for f in features}
             
-        # Detecta nomes das colunas de equipas (pode variar dependendo do treino)
-        h_col = 'Home' if 'Home' in df_ready.columns else 'HomeTeam'
-        a_col = 'Away' if 'Away' in df_ready.columns else 'AwayTeam'
-        has_team_cols = (h_col in df_ready.columns) and (a_col in df_ready.columns)
+            team_history = df_ready[df_ready['Team'] == team_name]
+            
+            # Se a equipa não tiver histórico, devolve médias seguras
+            if team_history.empty: 
+                return {f: df_ready[f].mean() if f in df_ready.columns else 0 for f in features}
+            
+            return team_history.iloc[-1].to_dict()
+
+        home_stats = get_latest_stats(home)
+        away_stats = get_latest_stats(away)
 
         for f in features:
-            val = None
-            
-            # Se for uma feature dependente da equipa (ex: Home_Goals_Last_5)
-            if has_team_cols:
-                # Descobre qual a equipa alvo desta feature
-                target_team = None
-                if f.startswith(('Home', 'H_', 'h_')): target_team = home
-                elif f.startswith(('Away', 'A_', 'a_')): target_team = away
-                
-                if target_team:
-                    # Filtra os jogos dessa equipa no histórico
-                    team_rows = history[(history[h_col] == target_team) | (history[a_col] == target_team)]
-                    
-                    if not team_rows.empty:
-                        # Pega na ÚLTIMA linha conhecida (o estado mais atual da equipa)
-                        last_row = team_rows.iloc[-1]
-                        
-                        # Verifica se a equipa jogou em Casa ou Fora nesse último jogo
-                        was_home_in_last = (last_row[h_col] == target_team)
-                        
-                        # Lógica de Mapeamento:
-                        # Se queremos a feature "Home_XG" para o Benfica (que joga em Casa hoje),
-                        # mas no último jogo o Benfica foi Fora, temos de ler a coluna "Away_XG" desse jogo anterior.
-                        col_to_read = f
-                        if not was_home_in_last:
-                            # Inverte o nome da coluna para ler o dado correto do histórico
-                            if 'Home' in f: col_to_read = f.replace('Home', 'Away')
-                            elif 'H_' in f: col_to_read = f.replace('H_', 'A_')
-                            elif 'Away' in f: col_to_read = f.replace('Away', 'Home')
-                            elif 'A_' in f: col_to_read = f.replace('A_', 'H_')
-                        
-                        if col_to_read in last_row:
-                            val = last_row[col_to_read]
+            if f in home_stats: 
+                input_data[f] = home_stats[f]
+            else:
+                # Fallback seguro: se a coluna existir, usa a média. Se não, usa 0.
+                input_data[f] = df_ready[f].mean() if not df_ready.empty and f in df_ready else 0
 
-            # Fallback: Se não encontrou valor específico (equipa nova ou feature genérica), usa a média
-            if val is None:
-                val = df_ready[f].mean() if not df_ready.empty and f in df_ready else 0
-            
-            input_data[f] = val
-
-        # ELO Ratings (Sempre Frescos)
+        # ELO Ratings
         match_date = pd.to_datetime(date_str)
         if not df_ready.empty:
             h_elo = current_elos.get(home, 1500)
@@ -262,7 +234,7 @@ def predict():
         try: input_data['Div_Code'] = le_div.transform([div])[0]
         except: input_data['Div_Code'] = 0
 
-        # 3. Execução do Modelo
+        # 3. Previsão do Modelo
         X = pd.DataFrame([input_data])[features]
         exp_h = float(xgb_goals_h.predict(X)[0])
         exp_a = float(xgb_goals_a.predict(X)[0])
@@ -272,11 +244,20 @@ def predict():
         try: conf_shield = float(model_shield.predict_proba(X)[0][1])
         except: conf_shield = prob_h + prob_d
 
+        # --- GERAÇÃO DA MATRIZ DE POISSON (0-5 golos) ---
+        score_matrix = []
         best_score, best_prob = "0-0", -1
+        
         for h in range(6):
+            row = []
             for a in range(6):
                 p = poisson.pmf(h, exp_h) * poisson.pmf(a, exp_a)
-                if p > best_prob: best_prob = p; best_score = f"{h} - {a}"
+                row.append(p)
+                
+                if p > best_prob: 
+                    best_prob = p
+                    best_score = f"{h} - {a}"
+            score_matrix.append(row)
 
         # 4. Scanner & Análise
         opportunities = [] 
@@ -302,7 +283,6 @@ def predict():
                 "status": status
             })
 
-        # ORDEM FIXA
         add(f"Vitoria {home}", odd_h, prob_h)
         add("Empate", odd_d, prob_d)
         add(f"Vitoria {away}", odd_a, prob_a)
@@ -322,6 +302,7 @@ def predict():
             'home': home, 'away': away,
             'xg': {'home': f"{exp_h:.2f}", 'away': f"{exp_a:.2f}"},
             'score': {'placar': best_score, 'prob': f"{best_prob:.1%}"},
+            'matrix': score_matrix, 
             'scanner': opportunities,
             'rational': rational,
             'safe': safe
