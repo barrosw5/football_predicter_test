@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import joblib
 import os
@@ -8,11 +8,15 @@ import numpy as np
 from scipy.stats import poisson
 import traceback
 
-app = Flask(__name__)
-# Permite CORS para qualquer origem durante desenvolvimento
+# --- CONFIGURAÇÃO PARA DEPLOY (RENDER) ---
+# Define que a pasta de ficheiros estáticos (HTML, CSS, JS) está em '../public'
+# Isto permite que o Render encontre o teu site
+app = Flask(__name__, static_folder='../public', static_url_path='')
 CORS(app)
 
-API_KEY = "81f8d50f4cac1f4ac373794f18440676" 
+# Tenta ler a chave das Variáveis de Ambiente (Segurança no Render)
+# Se não encontrar (ex: a rodar no teu PC), usa a chave fixa como segurança
+API_KEY = os.getenv("API_KEY", "81f8d50f4cac1f4ac373794f18440676") 
 
 # Mapeamento de Ligas (Inclui agora Europa League e Conference League como 'CL')
 LEAGUE_MAP = {
@@ -49,6 +53,13 @@ if os.path.exists(model_path):
         print(f"❌ ERRO CRÍTICO: {e}")
 else:
     print(f"❌ Ficheiro não encontrado: {model_path}")
+
+
+# --- NOVA ROTA: SERVIR O SITE (Frontend) ---
+# Isto resolve o erro "Not Found" no Render
+@app.route('/')
+def serve_index():
+    return send_from_directory(app.static_folder, 'index.html')
 
 
 # --- ROTA 1: BUSCAR JOGOS ---
@@ -188,7 +199,7 @@ def predict():
         
         # Função auxiliar para ir buscar os stats mais recentes da equipa
         def get_latest_stats(team_name):
-            # Se não houver coluna Team, devolve médias seguras (verifica se a coluna existe antes de pedir média)
+            # Se não houver coluna Team, devolve médias seguras
             if 'Team' not in df_ready.columns: 
                 return {f: df_ready[f].mean() if f in df_ready.columns else 0 for f in features}
             
