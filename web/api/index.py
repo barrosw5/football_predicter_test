@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 from scipy.stats import poisson
 import traceback
+import time # Necessário para o sistema de cache
 
 # --- CONFIGURAÇÃO PARA DEPLOY (RENDER) ---
 # Define que a pasta de ficheiros estáticos (HTML, CSS, JS) está em '../public'
@@ -14,12 +15,18 @@ app = Flask(__name__, static_folder='../public', static_url_path='')
 CORS(app)
 
 # --- SEGURANÇA: API KEY ---
-# Busca a chave às variáveis de ambiente do sistema.
-# Se não estiver definida (ex: no Render sem configuração), devolve None.
+# Busca a chave EXCLUSIVAMENTE às variáveis de ambiente (Render).
+# Não há chave hardcoded aqui.
 API_KEY = os.getenv("API_KEY")
 
 if not API_KEY:
-    print("⚠️ AVISO: A API Key não foi detetada nas variáveis de ambiente!")
+    print("⚠️ AVISO CRÍTICO: A API Key não foi encontrada nas variáveis de ambiente! Configure no Render.")
+
+# --- SISTEMA DE CACHE (RAM) ---
+# Guarda as respostas temporariamente para poupar créditos da API
+cache_fixtures = {} # Formato: { '2025-12-12': {'data': [...], 'timestamp': 17000000} }
+cache_odds = {}     # Formato: { '123456': {'data': {...}, 'timestamp': 17000000} }
+CACHE_DURATION = 3600 # 1 Hora em segundos (ajusta se quiseres)
 
 # Mapeamento de Ligas
 LEAGUE_MAP = {
@@ -57,37 +64,41 @@ else:
     print(f"❌ Ficheiro não encontrado: {model_path}")
 
 
-# --- NOVA ROTA: SERVIR O SITE (Frontend) ---
+# --- ROTA: SERVIR O SITE ---
 @app.route('/')
 def serve_index():
     return send_from_directory(app.static_folder, 'index.html')
 
 
-# --- ROTA 1: BUSCAR JOGOS ---
+# --- ROTA 1: BUSCAR JOGOS (COM CACHE) ---
 @app.route('/api/fixtures', methods=['POST'])
 def get_fixtures():
     try:
         data = request.get_json()
-        url = "https://v3.football.api-sports.io/fixtures"
+        date_query = data.get('date')
         
-        params = {'date': data.get('date')}
-        # Usa a chave carregada do ambiente
+        # 1. VERIFICAR CACHE
+        current_time = time.time()
+        if date_query in cache_fixtures:
+            cached_item = cache_fixtures[date_query]
+            # Se a cache for recente (menos de 1 hora), usa-a e não gasta API
+            if current_time - cached_item['timestamp'] < CACHE_DURATION:
+                print(f"⚡ CACHE: Servindo jogos guardados de {date_query}")
+                return jsonify(cached_item['data'])
+
+        # 2. SE NÃO HOUVER NA CACHE, PEDE À API
+        url = "https://v3.football.api-sports.io/fixtures"
+        params = {'date': date_query}
         headers = {'x-rapidapi-key': API_KEY, 'x-rapidapi-host': "v3.football.api-sports.io"}
 
-        print(f"📡 A pedir jogos à API para data: {data.get('date')}...")
+        print(f"📡 API: A pedir novos jogos para data: {date_query}...")
         response = requests.get(url, headers=headers, params=params)
-        
-        # DEBUG: Verifica erros da API
-        resp_json = response.json()
-        if 'errors' in resp_json and resp_json['errors']:
-            print(f"❌ ERRO DA API: {resp_json['errors']}")
-            # Não retornamos logo erro para não quebrar o frontend, mas fica registado
         
         if response.status_code != 200:
             print(f"❌ Erro API Status: {response.status_code}")
             return jsonify([])
 
-        fixtures_data = resp_json.get('response', [])
+        fixtures_data = response.json().get('response', [])
         supported_matches = []
 
         for f in fixtures_data:
@@ -110,6 +121,13 @@ def get_fixtures():
 
         supported_matches.sort(key=lambda x: (x['league_name'], x['match_time']))
         
+        # 3. GUARDAR NA CACHE (Para a próxima vez ser grátis)
+        if supported_matches:
+            cache_fixtures[date_query] = {
+                'data': supported_matches,
+                'timestamp': current_time
+            }
+        
         print(f"✅ Jogos: {len(fixtures_data)} recebidos -> {len(supported_matches)} suportados.")
         return jsonify(supported_matches)
 
@@ -119,17 +137,27 @@ def get_fixtures():
         return jsonify([])
 
 
-# --- ROTA 2: BUSCAR ODDS ---
+# --- ROTA 2: BUSCAR ODDS (COM CACHE) ---
 @app.route('/api/odds', methods=['POST'])
 def get_odds():
     try:
         data = request.get_json()
         fid = data.get('fixture_id')
         
+        # 1. VERIFICAR CACHE
+        current_time = time.time()
+        if fid in cache_odds:
+            cached_item = cache_odds[fid]
+            if current_time - cached_item['timestamp'] < CACHE_DURATION:
+                print(f"⚡ CACHE: Servindo odds guardadas para jogo {fid}")
+                return jsonify(cached_item['data'])
+
+        # 2. SE NÃO HOUVER NA CACHE, PEDE À API
         url = "https://v3.football.api-sports.io/odds"
         params = {'fixture': fid} 
         headers = {'x-rapidapi-key': API_KEY, 'x-rapidapi-host': "v3.football.api-sports.io"}
         
+        print(f"📡 API: A pedir odds para jogo {fid}...")
         response = requests.get(url, headers=headers, params=params)
         resp_json = response.json()
         
@@ -139,7 +167,7 @@ def get_odds():
         all_bookmakers = resp_json['response'][0]['bookmakers']
         if not all_bookmakers: return jsonify({"error": "Sem bookies"})
         
-        # Prioridade: Betclic -> Bet365 -> Primeiro
+        # Lógica de Prioridade (Igual ao anterior)
         target_bookie = next((b for b in all_bookmakers if "Betclic" in b['name']), None)
         if not target_bookie:
             target_bookie = next((b for b in all_bookmakers if "Bet365" in b['name']), None)
@@ -168,17 +196,25 @@ def get_odds():
             odds_dc['12'] = next((v['odd'] for v in vals_dc if v['value'] == 'Home/Away'), 0)
             odds_dc['x2'] = next((v['odd'] for v in vals_dc if v['value'] == 'Draw/Away'), 0)
             
-        return jsonify({
+        result_data = {
             'odd_h': odds_1x2['h'], 'odd_d': odds_1x2['d'], 'odd_a': odds_1x2['a'],
             'odd_1x': odds_dc['1x'], 'odd_12': odds_dc['12'], 'odd_x2': odds_dc['x2']
-        })
+        }
+
+        # 3. GUARDAR NA CACHE
+        cache_odds[fid] = {
+            'data': result_data,
+            'timestamp': current_time
+        }
+
+        return jsonify(result_data)
 
     except Exception as e:
         print(f"Erro Odds: {e}")
         return jsonify({"error": "Erro servidor"})
 
 
-# --- ROTA 3: PREVISÃO ---
+# --- ROTA 3: PREVISÃO (PREDICT) ---
 @app.route('/api/predict', methods=['POST'])
 def predict():
     global model_multi, xgb_goals_h, xgb_goals_a, df_ready
@@ -193,7 +229,7 @@ def predict():
         
         input_data = {}
         
-        # Função auxiliar para ir buscar os stats mais recentes
+        # Função auxiliar para ir buscar os stats mais recentes da equipa
         def get_latest_stats(team_name):
             if 'Team' not in df_ready.columns: 
                 return {f: df_ready[f].mean() if f in df_ready.columns else 0 for f in features}
@@ -239,7 +275,7 @@ def predict():
         try: input_data['Div_Code'] = le_div.transform([div])[0]
         except: input_data['Div_Code'] = 0
 
-        # Previsão
+        # Previsão do Modelo
         X = pd.DataFrame([input_data])[features]
         exp_h = float(xgb_goals_h.predict(X)[0])
         exp_a = float(xgb_goals_a.predict(X)[0])
