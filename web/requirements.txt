@@ -7,3 +7,4 @@ requests
 joblib
 xgboost
 scikit-learn
+gunicorn
