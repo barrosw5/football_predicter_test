@@ -20,25 +20,59 @@ API_KEY = os.getenv("API_KEY_ODDS")
 if not API_KEY:
     print("⚠️ AVISO: A API Key não foi detetada! Configure API_KEY_ODDS no Render.")
 
-# --- CONFIGURAÇÃO DAS LIGAS ---
+# --- CONFIGURAÇÃO DAS LIGAS (EXPANDIDA) ---
+# Mapeamento completo entre a The Odds API e os códigos do teu Modelo
 SUPPORTED_LEAGUES = [
-    'soccer_portugal_primeira_liga',
-    'soccer_epl',             
-    'soccer_spain_la_liga',   
-    'soccer_germany_bundesliga',
-    'soccer_italy_serie_a',
-    'soccer_france_ligue_one',
-    'soccer_uefa_champs_league',
-    'soccer_uefa_europa_league'
+    # --- INGLATERRA ---
+    'soccer_epl',             # Premier League (E0)
+    'soccer_efl_champ',       # Championship (E1)
+    
+    # --- FRANÇA ---
+    'soccer_france_ligue_one', # Ligue 1 (F1)
+    'soccer_france_ligue_two', # Ligue 2 (F2)
+    
+    # --- ALEMANHA ---
+    'soccer_germany_bundesliga',  # Bundesliga (D1)
+    'soccer_germany_bundesliga2', # Bundesliga 2 (D2)
+    
+    # --- ITÁLIA ---
+    'soccer_italy_serie_a',   # Serie A (I1)
+    'soccer_italy_serie_b',   # Serie B (I2)
+    
+    # --- ESPANHA ---
+    'soccer_spain_la_liga',   # La Liga (SP1)
+    'soccer_spain_segunda_division', # La Liga 2 (SP2)
+    
+    # --- OUTRAS LIGAS TREINADAS ---
+    'soccer_portugal_primeira_liga', # Portugal (P1)
+    'soccer_netherlands_eredivisie', # Holanda (N1)
+    'soccer_belgium_first_div',      # Bélgica (B1)
+    'soccer_turkey_super_league',    # Turquia (T1)
+    'soccer_greece_super_league',    # Grécia (G1)
+    'soccer_spl',                    # Escócia (SC0)
+    
+    # --- COMPETIÇÕES EUROPEIAS ---
+    'soccer_uefa_champs_league',     # Champions (CL)
+    'soccer_uefa_europa_league'      # Europa League (Usamos CL como proxy ou ignoramos se o modelo não tiver)
 ]
 
 MODEL_DIV_MAP = {
-    'soccer_portugal_primeira_liga': 'P1',
     'soccer_epl': 'E0',
-    'soccer_spain_la_liga': 'SP1',
-    'soccer_germany_bundesliga': 'D1',
-    'soccer_italy_serie_a': 'I1',
+    'soccer_efl_champ': 'E1',
     'soccer_france_ligue_one': 'F1',
+    'soccer_france_ligue_two': 'F2',
+    'soccer_germany_bundesliga': 'D1',
+    'soccer_germany_bundesliga2': 'D2',
+    'soccer_italy_serie_a': 'I1',
+    'soccer_italy_serie_b': 'I2',
+    'soccer_spain_la_liga': 'SP1',
+    'soccer_spain_segunda_division': 'SP2',
+    'soccer_portugal_primeira_liga': 'P1',
+    'soccer_netherlands_eredivisie': 'N1',
+    'soccer_belgium_first_div': 'B1',
+    'soccer_turkey_super_league': 'T1',
+    'soccer_greece_super_league': 'G1',
+    'soccer_spl': 'SC0',
     'soccer_uefa_champs_league': 'CL',
     'soccer_uefa_europa_league': 'CL' 
 }
@@ -70,6 +104,7 @@ if os.path.exists(model_path):
 
 # --- HELPER: Normalizar Nomes ---
 def normalize_name(name):
+    # Mapa expandido para cobrir mais equipas das novas ligas
     name_map = {
         'Sporting Lisbon': 'Sporting CP', 'Sporting': 'Sporting CP',
         'Benfica': 'Benfica', 'FC Porto': 'Porto',
@@ -77,7 +112,15 @@ def normalize_name(name):
         'Paris Saint Germain': 'Paris SG', 'PSG': 'Paris SG',
         'Bayern Munich': 'Bayern Munich', 'Leverkusen': 'Bayer Leverkusen',
         'Inter Milan': 'Inter', 'AC Milan': 'Milan',
-        'Atletico Madrid': 'Ath Madrid', 'Real Madrid': 'Real Madrid'
+        'Atletico Madrid': 'Ath Madrid', 'Real Madrid': 'Real Madrid',
+        'Sheffield Utd': 'Sheffield United', 'Leeds United': 'Leeds',
+        'Leicester City': 'Leicester', 'Norwich City': 'Norwich',
+        'PSV Eindhoven': 'PSV', 'Feyenoord Rotterdam': 'Feyenoord',
+        'AZ Alkmaar': 'AZ Alkmaar',
+        'Club Brugge': 'Club Brugge', 'Anderlecht': 'Anderlecht',
+        'Galatasaray': 'Galatasaray', 'Fenerbahce': 'Fenerbahce',
+        'Olympiacos': 'Olympiakos', 'Panathinaikos': 'Panathinaikos',
+        'Celtic': 'Celtic', 'Rangers': 'Rangers'
     }
     return name_map.get(name, name)
 
@@ -111,13 +154,16 @@ def get_fixtures():
                     'markets': 'h2h',
                     'oddsFormat': 'decimal'
                 }
+                
                 res = requests.get(url, params=params)
-
+                
+                # --- MONITORIZAÇÃO DE QUOTA (NOVO) ---
                 if 'x-requests-remaining' in res.headers:
                     restantes = res.headers['x-requests-remaining']
                     usados = res.headers['x-requests-used']
-                    print(f"\n📊 ESTADO DA API: Usaste {usados} pedidos. Ainda tens {restantes} este mês.\n")
-                    
+                    print(f"   📊 API STATUS: Usaste {usados}. Restam {restantes}.")
+                # -------------------------------------
+
                 if res.status_code == 200:
                     league_data = res.json()
                     api_cache[sport_key] = {'data': league_data, 'ts': current_time}
@@ -144,7 +190,7 @@ def get_fixtures():
                         'id': game['id'], 
                         'home_team': normalize_name(game['home_team']),
                         'away_team': normalize_name(game['away_team']),
-                        'division': MODEL_DIV_MAP.get(sport_key, 'E0'),
+                        'division': MODEL_DIV_MAP.get(sport_key, 'E0'), # Default E0 se falhar
                         'league_name': game['sport_title'],
                         'country': 'World',
                         'match_time': game['commence_time'].split('T')[1][:5],
@@ -276,7 +322,6 @@ def predict():
             score_matrix.append(row)
 
         # --- CALCULO AMBAS MARCAM (BTTS) ---
-        # Probabilidade de (Home > 0) * Probabilidade de (Away > 0)
         prob_home_scores = 1 - poisson.pmf(0, exp_h)
         prob_away_scores = 1 - poisson.pmf(0, exp_a)
         prob_btts = prob_home_scores * prob_away_scores
@@ -313,7 +358,7 @@ def predict():
         return jsonify({
             'home': home, 'away': away,
             'xg': {'home': f"{exp_h:.2f}", 'away': f"{exp_a:.2f}"},
-            'btts': f"{prob_btts:.1%}", # <--- NOVA ESTATÍSTICA AQUI
+            'btts': f"{prob_btts:.1%}",
             'score': {'placar': best_score, 'prob': f"{best_prob:.1%}"},
             'matrix': score_matrix, 
             'scanner': opportunities,
